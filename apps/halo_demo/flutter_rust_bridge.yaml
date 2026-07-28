@@ -1,0 +1,6 @@
+rust_input: crate::api
+rust_root: ../../crates/halo-ffi/
+dart_output: lib/src/rust
+dart_entrypoint_class_name: HaloRustLib
+default_external_library_loader_web_prefix: halo_ffi
+web: false

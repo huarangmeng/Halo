@@ -1,5 +1,5 @@
 [package]
-name = "halo-ffi"
+name = "halo_ffi"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -16,4 +16,5 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

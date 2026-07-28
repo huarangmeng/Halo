@@ -152,6 +152,7 @@ pub enum WireError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DeviceType;
 
     fn local() -> LocalPresence {
         LocalPresence::new(
@@ -189,6 +190,23 @@ mod tests {
             )
             .with_reply_port(44721))
         );
+    }
+
+    #[test]
+    fn device_type_metadata_has_a_stable_wire_allocation() {
+        let typed = LocalPresence::new(
+            PresenceId::from_bytes([0x22; 16]),
+            ProtocolRange::new(1, 1).unwrap_or_else(|error| panic!("test range: {error}")),
+            Capabilities::default().with_device_type(DeviceType::Macos),
+            4433,
+        )
+        .unwrap_or_else(|error| panic!("test presence: {error}"));
+
+        let encoded = PresenceMessage::from_local(&typed, MessageKind::Announce, 1, 0).encode();
+        assert_eq!(&encoded[34..42], &[0x30, 0, 0, 0, 0, 0, 0, 0]);
+        let decoded = PresenceMessage::decode(&encoded)
+            .unwrap_or_else(|error| panic!("decode typed presence: {error}"));
+        assert_eq!(decoded.capabilities.device_type(), DeviceType::Macos);
     }
 
     #[test]

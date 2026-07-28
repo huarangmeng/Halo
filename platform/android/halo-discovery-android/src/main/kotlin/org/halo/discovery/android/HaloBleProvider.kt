@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattConnectionSettings
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattServer
 import android.bluetooth.BluetoothGattServerCallback
@@ -32,6 +33,10 @@ import android.os.SystemClock
 import java.io.Closeable
 import java.util.ArrayDeque
 import java.util.UUID
+import java.util.concurrent.Executor
+
+private const val HALO_BLE_PRESENCE_LENGTH = 58
+private const val HALO_BLE_LOCAL_NAME = "Halo"
 
 public enum class HaloBleState {
     STARTING,
@@ -82,12 +87,28 @@ public data class HaloBleConfiguration(
     val maximumConcurrentGattConnections: Int = 2,
     val refreshIntervalMillis: Long = 10_000,
     val connectionTimeoutMillis: Long = 8_000,
+    val hardwareFilterFallbackMillis: Long = 3_000,
+    val scanRetryBaseMillis: Long = 2_000,
+    val scanRetryMaximumMillis: Long = 30_000,
+    val peerRetryBaseMillis: Long = 2_000,
+    val peerRetryMaximumMillis: Long = 60_000,
+    val advertisingRetryBaseMillis: Long = 2_000,
+    val advertisingRetryMaximumMillis: Long = 30_000,
 ) {
     init {
-        require(presence.size == PRESENCE_LENGTH) { "presence must be exactly 58 opaque bytes" }
+        require(presence.size == HALO_BLE_PRESENCE_LENGTH) {
+            "presence must be exactly 58 opaque bytes"
+        }
         require(maximumConcurrentGattConnections in 1..8)
         require(refreshIntervalMillis >= 1_000)
         require(connectionTimeoutMillis in 1_000..60_000)
+        require(hardwareFilterFallbackMillis in 1_000..30_000)
+        require(scanRetryBaseMillis in 1_000..30_000)
+        require(scanRetryMaximumMillis in scanRetryBaseMillis..120_000)
+        require(peerRetryBaseMillis in 1_000..30_000)
+        require(peerRetryMaximumMillis in peerRetryBaseMillis..300_000)
+        require(advertisingRetryBaseMillis in 1_000..30_000)
+        require(advertisingRetryMaximumMillis in advertisingRetryBaseMillis..120_000)
     }
 }
 
@@ -114,7 +135,12 @@ public class HaloBleProvider(
     private var started = false
     private var receiverRegistered = false
     private var scanning = false
+    private var scanHealthy = false
+    private var scanRetryAttempt = 0
+    private var usingHardwareScanFilter = false
     private var advertising = false
+    private var advertisingRetryAttempt = 0
+    private var restartGattServerOnRetry = false
     private var gattServer: BluetoothGattServer? = null
     private var presenceCharacteristic: BluetoothGattCharacteristic? = null
     private var wakeCharacteristic: BluetoothGattCharacteristic? = null
@@ -127,10 +153,28 @@ public class HaloBleProvider(
     private val activeGatts = mutableMapOf<String, BluetoothGatt>()
     private val connectionTimeouts = mutableMapOf<String, Runnable>()
     private val lastReadAt = mutableMapOf<String, Long>()
+    private val peerRetryAttempts = mutableMapOf<String, Int>()
+    private val peerRetryNotBefore = mutableMapOf<String, Long>()
     private val serverConnections = mutableSetOf<String>()
     private val subscribedDevices = mutableMapOf<String, BluetoothDevice>()
     private val lastWakeAt = mutableMapOf<String, Long>()
     private var lastGlobalWakeAt = 0L
+    private val scanFilterFallback = Runnable(::switchToSoftwareFilteredScan)
+    private val scanAfterFilterFallback = Runnable {
+        val adapter = bluetoothManager?.adapter
+        if (started && adapter?.isEnabled == true) {
+            startScan(adapter, useHardwareFilter = false)
+            emitDiagnostic(
+                "scan-fallback",
+                "hardware UUID filter found no Halo peer; software filtering enabled",
+            )
+        }
+    }
+    private val scanRegistrationConfirmation = Runnable {
+        if (started && scanning) markScanHealthy()
+    }
+    private val scanRetry = Runnable(::retryScan)
+    private val advertisingRetry = Runnable(::retryAdvertising)
 
     public fun start() {
         handler.post(::startInternal)
@@ -140,8 +184,24 @@ public class HaloBleProvider(
         handler.post(::stopInternal)
     }
 
+    /**
+     * Releases every Android Bluetooth registration before invoking [onComplete].
+     * Callers replacing a provider must wait for this callback before starting
+     * another instance, otherwise vendor stacks may retain duplicate scanners.
+     */
+    public fun shutdown(onComplete: () -> Unit) {
+        val accepted = handler.post {
+            stopInternal()
+            onComplete()
+            workerThread.quitSafely()
+        }
+        if (!accepted) onComplete()
+    }
+
     public fun updatePresence(presence: ByteArray) {
-        require(presence.size == PRESENCE_LENGTH) { "presence must be exactly 58 opaque bytes" }
+        require(presence.size == HALO_BLE_PRESENCE_LENGTH) {
+            "presence must be exactly 58 opaque bytes"
+        }
         handler.post {
             currentPresence = presence.copyOf()
             notifySubscribedPeers(currentPresence, presenceCharacteristic)
@@ -149,9 +209,23 @@ public class HaloBleProvider(
     }
 
     override fun close() {
+        shutdown {}
+    }
+
+    /** Re-checks permissions and radio state after returning from Settings. */
+    public fun refreshSystemState() {
         handler.post {
-            stopInternal()
-            workerThread.quitSafely()
+            val adapter = bluetoothManager?.adapter
+            if (!hasRequiredPermissions()) {
+                if (started) stopInternal()
+                emitState(HaloBleState.PERMISSION_REQUIRED)
+            } else if (adapter?.isEnabled != true) {
+                if (started) stopInternal()
+                registerBluetoothReceiver()
+                emitState(HaloBleState.BLUETOOTH_OFF)
+            } else if (!started) {
+                startInternal()
+            }
         }
     }
 
@@ -185,29 +259,59 @@ public class HaloBleProvider(
 
     private fun stopInternal() {
         val adapter = bluetoothManager?.adapter
-        if (hasRequiredPermissions()) {
+        try {
+            // Always ask the stack to unregister this callback. `scanning` may
+            // already be false after an asynchronous registration failure.
+            adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        } catch (error: SecurityException) {
+            emitDiagnostic("scan-stop", error.javaClass.simpleName)
+        } catch (error: RuntimeException) {
+            emitDiagnostic("scan-stop", error.javaClass.simpleName)
+        }
+        try {
+            adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+        } catch (error: SecurityException) {
+            emitDiagnostic("advertise-stop", error.javaClass.simpleName)
+        } catch (error: RuntimeException) {
+            emitDiagnostic("advertise-stop", error.javaClass.simpleName)
+        }
+        activeGatts.values.forEach { gatt ->
             try {
-                if (scanning) adapter?.bluetoothLeScanner?.stopScan(scanCallback)
-                if (advertising) adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
-                activeGatts.values.forEach {
-                    it.disconnect()
-                    it.close()
-                }
-                serverConnections.forEach { key ->
-                    devices[key]?.let { gattServer?.cancelConnection(it) }
-                }
-            } catch (error: SecurityException) {
-                emitDiagnostic("stop", error.javaClass.simpleName)
+                gatt.disconnect()
+            } catch (_: SecurityException) {
+                // `close` below still releases the client registration.
+            }
+            gatt.close()
+        }
+        serverConnections.forEach { key ->
+            try {
+                devices[key]?.let { gattServer?.cancelConnection(it) }
+            } catch (_: SecurityException) {
+                // Closing the server below remains the final cleanup path.
             }
         }
-        connectionTimeouts.values.forEach(handler::removeCallbacks)
-        gattServer?.clearServices()
+        try {
+            gattServer?.clearServices()
+        } catch (_: SecurityException) {
+            // Permission can be revoked while discovery is active.
+        }
         gattServer?.close()
+        connectionTimeouts.values.forEach(handler::removeCallbacks)
+        handler.removeCallbacks(scanFilterFallback)
+        handler.removeCallbacks(scanAfterFilterFallback)
+        handler.removeCallbacks(scanRegistrationConfirmation)
+        handler.removeCallbacks(scanRetry)
+        handler.removeCallbacks(advertisingRetry)
         gattServer = null
         presenceCharacteristic = null
         wakeCharacteristic = null
         scanning = false
+        scanHealthy = false
+        scanRetryAttempt = 0
+        usingHardwareScanFilter = false
         advertising = false
+        advertisingRetryAttempt = 0
+        restartGattServerOnRetry = false
         started = false
         devices.clear()
         handles.clear()
@@ -216,6 +320,8 @@ public class HaloBleProvider(
         activeGatts.clear()
         connectionTimeouts.clear()
         lastReadAt.clear()
+        peerRetryAttempts.clear()
+        peerRetryNotBefore.clear()
         serverConnections.clear()
         subscribedDevices.clear()
         lastWakeAt.clear()
@@ -224,29 +330,108 @@ public class HaloBleProvider(
         emitState(HaloBleState.STOPPED)
     }
 
-    private fun startScan(adapter: BluetoothAdapter) {
+    private fun startScan(adapter: BluetoothAdapter, useHardwareFilter: Boolean = true) {
         val scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
             emitDiagnostic("scan", "BLE scanner unavailable")
             emitState(HaloBleState.DEGRADED)
             return
         }
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(HaloBleUuids.SERVICE))
-            .build()
+        val filters = if (useHardwareFilter) {
+            listOf(
+                ScanFilter.Builder()
+                    .setServiceUuid(ParcelUuid(HaloBleUuids.SERVICE))
+                    .build(),
+                ScanFilter.Builder()
+                    .setDeviceName(HALO_BLE_LOCAL_NAME)
+                    .build(),
+            )
+        } else {
+            emptyList()
+        }
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
             .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
             .build()
         try {
-            scanner.startScan(listOf(filter), settings, scanCallback)
+            handler.removeCallbacks(scanRegistrationConfirmation)
+            scanner.startScan(filters, settings, scanCallback)
             scanning = true
+            scanHealthy = false
+            usingHardwareScanFilter = useHardwareFilter
+            handler.postDelayed(scanRegistrationConfirmation, SCAN_REGISTRATION_CONFIRM_MILLIS)
+            if (useHardwareFilter) {
+                handler.postDelayed(
+                    scanFilterFallback,
+                    configuration.hardwareFilterFallbackMillis,
+                )
+            }
         } catch (error: SecurityException) {
             emitDiagnostic("scan", error.javaClass.simpleName)
             emitState(HaloBleState.PERMISSION_REQUIRED)
         } catch (error: RuntimeException) {
             emitDiagnostic("scan", error.javaClass.simpleName)
+            emitState(HaloBleState.DEGRADED)
+            scheduleScanRetry(-1)
+        }
+    }
+
+    private fun retryScan() {
+        if (!started || !hasRequiredPermissions()) return
+        val adapter = bluetoothManager?.adapter ?: return
+        if (!adapter.isEnabled) return
+        emitDiagnostic("scan-retry", "retrying Android BLE scanner registration")
+        startScan(adapter, useHardwareFilter = false)
+    }
+
+    private fun scheduleScanRetry(errorCode: Int) {
+        if (!started) return
+        scanRetryAttempt = (scanRetryAttempt + 1).coerceAtMost(MAX_BACKOFF_ATTEMPT)
+        val delay = boundedBackoff(
+            configuration.scanRetryBaseMillis,
+            configuration.scanRetryMaximumMillis,
+            scanRetryAttempt,
+        )
+        handler.removeCallbacks(scanRetry)
+        handler.postDelayed(scanRetry, delay)
+        emitDiagnostic(
+            "scan-retry",
+            "Android scan error $errorCode; retrying in ${delay}ms",
+        )
+    }
+
+    private fun markScanHealthy() {
+        if (scanHealthy) return
+        scanHealthy = true
+        scanRetryAttempt = 0
+        handler.removeCallbacks(scanRetry)
+        if (advertising) emitState(HaloBleState.READY)
+    }
+
+    /**
+     * Some Android vendor controllers silently drop valid 128-bit UUID results
+     * when a hardware ScanFilter is active. Fall back to an unfiltered radio
+     * scan, but accept only advertisements whose parsed record contains Halo's
+     * service UUID or the fixed public product marker. A name-only candidate
+     * still has to expose the Halo GATT service and a Rust-valid Presence packet
+     * before it is emitted upstream.
+     */
+    private fun switchToSoftwareFilteredScan() {
+        if (!started || !scanning || !usingHardwareScanFilter || devices.isNotEmpty()) return
+        val adapter = bluetoothManager?.adapter ?: return
+        val scanner = adapter.bluetoothLeScanner ?: return
+        try {
+            scanner.stopScan(scanCallback)
+            scanning = false
+            scanHealthy = false
+            usingHardwareScanFilter = false
+            handler.postDelayed(scanAfterFilterFallback, SCAN_RESTART_SETTLE_MILLIS)
+        } catch (error: SecurityException) {
+            emitDiagnostic("scan-fallback", error.javaClass.simpleName)
+            emitState(HaloBleState.PERMISSION_REQUIRED)
+        } catch (error: RuntimeException) {
+            emitDiagnostic("scan-fallback", error.javaClass.simpleName)
             emitState(HaloBleState.DEGRADED)
         }
     }
@@ -262,6 +447,7 @@ public class HaloBleProvider(
             if (server == null) {
                 emitDiagnostic("gatt-server", "failed to open GATT server")
                 emitState(HaloBleState.DEGRADED)
+                scheduleAdvertisingRetry(restartGattServer = true)
                 return
             }
             gattServer = server
@@ -289,10 +475,15 @@ public class HaloBleProvider(
             if (!server.addService(service)) {
                 emitDiagnostic("gatt-server", "failed to enqueue Halo service")
                 emitState(HaloBleState.DEGRADED)
+                scheduleAdvertisingRetry(restartGattServer = true)
             }
         } catch (error: SecurityException) {
             emitDiagnostic("gatt-server", error.javaClass.simpleName)
             emitState(HaloBleState.PERMISSION_REQUIRED)
+        } catch (error: RuntimeException) {
+            emitDiagnostic("gatt-server", error.javaClass.simpleName)
+            emitState(HaloBleState.DEGRADED)
+            scheduleAdvertisingRetry(restartGattServer = true)
         }
     }
 
@@ -327,11 +518,49 @@ public class HaloBleProvider(
         } catch (error: RuntimeException) {
             emitDiagnostic("advertise", error.javaClass.simpleName)
             emitState(HaloBleState.DEGRADED)
+            scheduleAdvertisingRetry(restartGattServer = false)
+        }
+    }
+
+    private fun scheduleAdvertisingRetry(restartGattServer: Boolean) {
+        if (!started) return
+        restartGattServerOnRetry = restartGattServerOnRetry || restartGattServer
+        advertisingRetryAttempt = (advertisingRetryAttempt + 1).coerceAtMost(MAX_BACKOFF_ATTEMPT)
+        val delay = boundedBackoff(
+            configuration.advertisingRetryBaseMillis,
+            configuration.advertisingRetryMaximumMillis,
+            advertisingRetryAttempt,
+        )
+        handler.removeCallbacks(advertisingRetry)
+        handler.postDelayed(advertisingRetry, delay)
+        emitDiagnostic("advertise-retry", "retrying BLE advertising in ${delay}ms")
+    }
+
+    private fun retryAdvertising() {
+        if (!started || !hasRequiredPermissions()) return
+        val adapter = bluetoothManager?.adapter ?: return
+        if (!adapter.isEnabled) return
+        if (restartGattServerOnRetry) {
+            restartGattServerOnRetry = false
+            try {
+                gattServer?.clearServices()
+            } catch (_: SecurityException) {
+                // Reopening below remains the recovery path.
+            }
+            gattServer?.close()
+            gattServer = null
+            presenceCharacteristic = null
+            wakeCharacteristic = null
+            startGattServer(adapter)
+        } else {
+            startAdvertising()
         }
     }
 
     private fun onScanResult(result: ScanResult) {
         if (!started) return
+        markScanHealthy()
+        if (!isHaloAdvertisement(result)) return
         val key = addressOf(result.device) ?: return
         devices[key] = result.device
         handles.getOrPut(key, UUID::randomUUID)
@@ -339,9 +568,18 @@ public class HaloBleProvider(
 
         val now = SystemClock.elapsedRealtime()
         val recentlyRead = lastReadAt[key]?.let { now - it < configuration.refreshIntervalMillis } == true
-        if (recentlyRead || activeGatts.containsKey(key) || pending.contains(key)) return
+        val retryDeferred = now < (peerRetryNotBefore[key] ?: 0L)
+        if (recentlyRead || retryDeferred || activeGatts.containsKey(key) || pending.contains(key)) return
         pending.addLast(key)
         drainConnectionQueue()
+    }
+
+    private fun isHaloAdvertisement(result: ScanResult): Boolean {
+        val record = result.scanRecord ?: return false
+        val haloService = ParcelUuid(HaloBleUuids.SERVICE)
+        return record.serviceUuids.orEmpty().contains(haloService) ||
+            record.serviceSolicitationUuids.orEmpty().contains(haloService) ||
+            record.deviceName == HALO_BLE_LOCAL_NAME
     }
 
     private fun drainConnectionQueue() {
@@ -353,14 +591,33 @@ public class HaloBleProvider(
             val key = pending.removeFirst()
             val device = devices[key] ?: continue
             try {
-                val gatt = device.connectGatt(
-                    applicationContext,
-                    false,
-                    clientCallback,
-                    BluetoothDevice.TRANSPORT_LE,
-                    BluetoothDevice.PHY_LE_1M_MASK,
-                    handler,
-                )
+                val gatt = if (Build.VERSION.SDK_INT >= 37) {
+                    val settings = BluetoothGattConnectionSettings.Builder()
+                        .setAutoConnectEnabled(false)
+                        .setAutomaticMtuEnabled(true)
+                        .setTransport(BluetoothDevice.TRANSPORT_LE)
+                        .build()
+                    device.connectGatt(
+                        settings,
+                        Executor { command -> handler.post(command) },
+                        clientCallback,
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    device.connectGatt(
+                        applicationContext,
+                        false,
+                        clientCallback,
+                        BluetoothDevice.TRANSPORT_LE,
+                        BluetoothDevice.PHY_LE_1M_MASK,
+                        handler,
+                    )
+                }
+                if (gatt == null) {
+                    emitDiagnostic("connect", "Android rejected the GATT connection request")
+                    deferPeerRetry(key)
+                    continue
+                }
                 activeGatts[key] = gatt
                 val timeout = Runnable {
                     if (activeGatts[key] === gatt) {
@@ -373,8 +630,10 @@ public class HaloBleProvider(
             } catch (error: SecurityException) {
                 emitDiagnostic("connect", error.javaClass.simpleName)
                 emitState(HaloBleState.PERMISSION_REQUIRED)
+                deferPeerRetry(key)
             } catch (error: RuntimeException) {
                 emitDiagnostic("connect", error.javaClass.simpleName)
+                deferPeerRetry(key)
             }
         }
     }
@@ -390,7 +649,7 @@ public class HaloBleProvider(
             finishClient(key, gatt, disconnectFirst = true)
             return
         }
-        if (value.size == PRESENCE_LENGTH) {
+        if (value.size == HALO_BLE_PRESENCE_LENGTH) {
             lastReadAt[key] = SystemClock.elapsedRealtime()
             listener.onEvent(
                 HaloBleEvent.Presence(
@@ -399,15 +658,28 @@ public class HaloBleProvider(
                     rssi = latestRssi[key] ?: Int.MIN_VALUE,
                 ),
             )
+            finishClient(key, gatt, disconnectFirst = true, succeeded = true)
+            return
         } else {
             emitDiagnostic("presence-read", "unexpected opaque value length ${value.size}")
         }
         finishClient(key, gatt, disconnectFirst = true)
     }
 
-    private fun finishClient(key: String, gatt: BluetoothGatt, disconnectFirst: Boolean) {
+    private fun finishClient(
+        key: String,
+        gatt: BluetoothGatt,
+        disconnectFirst: Boolean,
+        succeeded: Boolean = false,
+    ) {
         connectionTimeouts.remove(key)?.let(handler::removeCallbacks)
         activeGatts.remove(key)
+        if (succeeded) {
+            peerRetryAttempts.remove(key)
+            peerRetryNotBefore.remove(key)
+        } else {
+            deferPeerRetry(key)
+        }
         try {
             if (disconnectFirst) gatt.disconnect()
             gatt.close()
@@ -415,6 +687,16 @@ public class HaloBleProvider(
             emitDiagnostic("disconnect", error.javaClass.simpleName)
         }
         drainConnectionQueue()
+    }
+
+    private fun deferPeerRetry(key: String) {
+        val attempt = ((peerRetryAttempts[key] ?: 0) + 1).coerceAtMost(MAX_BACKOFF_ATTEMPT)
+        peerRetryAttempts[key] = attempt
+        peerRetryNotBefore[key] = SystemClock.elapsedRealtime() + boundedBackoff(
+            configuration.peerRetryBaseMillis,
+            configuration.peerRetryMaximumMillis,
+            attempt,
+        )
     }
 
     private fun notifySubscribedPeers(
@@ -544,8 +826,12 @@ public class HaloBleProvider(
         override fun onScanFailed(errorCode: Int) {
             handler.post {
                 scanning = false
+                scanHealthy = false
+                handler.removeCallbacks(scanFilterFallback)
+                handler.removeCallbacks(scanRegistrationConfirmation)
                 emitDiagnostic("scan", "Android scan error $errorCode")
                 emitState(HaloBleState.DEGRADED)
+                scheduleScanRetry(errorCode)
             }
         }
     }
@@ -554,7 +840,10 @@ public class HaloBleProvider(
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             handler.post {
                 advertising = true
-                emitState(if (scanning) HaloBleState.READY else HaloBleState.DEGRADED)
+                advertisingRetryAttempt = 0
+                restartGattServerOnRetry = false
+                handler.removeCallbacks(advertisingRetry)
+                emitState(if (scanHealthy) HaloBleState.READY else HaloBleState.DEGRADED)
             }
         }
 
@@ -563,6 +852,7 @@ public class HaloBleProvider(
                 advertising = false
                 emitDiagnostic("advertise", "Android advertise error $errorCode")
                 emitState(HaloBleState.DEGRADED)
+                scheduleAdvertisingRetry(restartGattServer = false)
             }
         }
     }
@@ -644,6 +934,7 @@ public class HaloBleProvider(
                 } else {
                     emitDiagnostic("gatt-server", "service add status $status")
                     emitState(HaloBleState.DEGRADED)
+                    scheduleAdvertisingRetry(restartGattServer = true)
                 }
             }
         }
@@ -787,10 +1078,20 @@ public class HaloBleProvider(
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_ADVERTISE,
             Manifest.permission.BLUETOOTH_CONNECT,
+            // Some vendor Android builds return no BLE scan results without
+            // location permission, including on Android 12 and newer.
+            Manifest.permission.ACCESS_FINE_LOCATION,
         )
 
         private const val GLOBAL_WAKE_INTERVAL_MILLIS = 500L
         private const val PEER_WAKE_INTERVAL_MILLIS = 2_000L
-        private const val PRESENCE_LENGTH = 58
+        private const val SCAN_REGISTRATION_CONFIRM_MILLIS = 1_000L
+        private const val SCAN_RESTART_SETTLE_MILLIS = 300L
+        private const val MAX_BACKOFF_ATTEMPT = 8
     }
+}
+
+private fun boundedBackoff(baseMillis: Long, maximumMillis: Long, attempt: Int): Long {
+    val shift = (attempt - 1).coerceIn(0, 30)
+    return baseMillis.times(1L shl shift).coerceAtMost(maximumMillis)
 }

@@ -1,6 +1,6 @@
 # Halo 设备发现与链路探测设计
 
-- 状态：设计已确认，等待实现与真机验证
+- 状态：Android/macOS 前台发现实验实现，持续真机验证
 - 版本：Draft 1
 - 日期：2026-07-28
 - 适用平台：Android、iOS、Windows、macOS
@@ -211,10 +211,13 @@ GATT 连接自身不能代替 Halo 配对。读取超时、MTU 分片、重复�
   `BluetoothGattServer`。
 - Android 12/API 31 及以上按实际行为申请 `BLUETOOTH_SCAN`、
   `BLUETOOTH_ADVERTISE`、`BLUETOOTH_CONNECT` 运行时权限。
-- 不用 BLE 推断物理位置时评估 `neverForLocation`，并在真机测试某些广播是否因此被
-  系统过滤。
+- Halo 不声明 `neverForLocation`。Android 官方说明该标志会过滤部分 BLE 广播，而且
+  部分厂商的高版本系统即使已经授予“附近设备”权限，仍会在缺少
+  `ACCESS_FINE_LOCATION` 时抑制扫描结果。因此 Android Demo 在启动发现时同时请求精确
+  位置权限，但 Rust Core 与平台适配器不得推断、保存或传输物理位置。
 - 运行时检查 BLE、广播、扩展广播和多广播实例能力，不以 Android 版本号代替能力判断。
-- Android 11 及以下的 Location 权限差异必须进入支持矩阵。
+- 权限已授予但系统级“位置信息”开关关闭时，厂商仍可能阻止扫描；该状态必须作为能力
+  降级展示，不能伪装成“附近没有设备”。
 
 #### iOS
 
@@ -222,12 +225,23 @@ GATT 连接自身不能代替 Halo 配对。读取超时、MTU 分片、重复�
 - `Info.plist` 提供准确的 Bluetooth 使用说明。
 - 前台同时扫描和广播；后台不作为首版承诺。
 - 不依赖广播包一定包含本地名称或扩展字段，核心 Presence 通过 GATT 获取。
+- Apple CoreBluetooth 可能把 128-bit Service UUID 放入其他平台不可见的 overflow 区域；
+  因此前台广播可以同时携带固定产品标记 `Halo` 作为候选回退。该标记不是用户设备名、
+  身份或信任证据；对仅由名称命中的候选，仍必须发现 Halo GATT Service、读取完整
+  Presence，并由 Rust 严格校验后才能进入聚合器。
 - 处理系统对重复广播、扫描结果和应用生命周期的合并与节流。
+- Provider 替换必须先同步注销旧的 Scan、Advertise 和 GATT 资源；旧实例的延迟事件通过
+  generation token 丢弃，不能污染新会话。
+- 切后台、权限撤销、蓝牙关闭或控制器重置时必须释放所有注册。回到前台后重新检查系统
+  状态，不得把上一次的 `ready` 状态当作仍然有效。
+- 扫描注册、广播注册和 GATT 读取失败分别采用独立的有上限指数退避；重复广播不得绕过
+  单 Peer 退避形成连接风暴。
 
 #### macOS
 
 - 使用 CoreBluetooth，并区分沙盒、签名和不同分发方式下的权限行为。
-- 同时验证 Intel 与 Apple Silicon、睡眠唤醒和蓝牙控制器重置。
+- 当前 Demo 仅支持 Apple Silicon（arm64）；验证睡眠唤醒和蓝牙控制器重置。Intel 支持
+  需要单独恢复并完成互操作验证后才能声明。
 
 #### Windows
 

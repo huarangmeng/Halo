@@ -19,8 +19,8 @@ pub mod providers;
 pub use error::{DiscoveryError, ProviderError};
 pub use manager::{DiscoveryHandle, DiscoveryManager, DiscoverySession};
 pub use model::{
-    Capabilities, ConnectionFailure, ConnectionOutcome, DiscoveryConfig, DiscoveryEvent, Endpoint,
-    EndpointCandidate, LocalPresence, Observation, PeerSnapshot, PresenceId, ProtocolRange,
-    ProviderId, ProviderKind, ProviderState,
+    Capabilities, ConnectionFailure, ConnectionOutcome, DeviceType, DiscoveryConfig,
+    DiscoveryEvent, Endpoint, EndpointCandidate, LocalPresence, Observation, PeerSnapshot,
+    PresenceId, ProtocolRange, ProviderId, ProviderKind, ProviderState,
 };
 pub use provider::{DiscoveryProvider, ProviderContext};

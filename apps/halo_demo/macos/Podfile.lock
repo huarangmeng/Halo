@@ -1,0 +1,22 @@
+PODS:
+  - FlutterMacOS (1.0.0)
+  - halo_ffi (0.0.1):
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - halo_ffi (from `Flutter/ephemeral/.symlinks/plugins/halo_ffi/macos`)
+
+EXTERNAL SOURCES:
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  halo_ffi:
+    :path: Flutter/ephemeral/.symlinks/plugins/halo_ffi/macos
+
+SPEC CHECKSUMS:
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  halo_ffi: 72c28c795830d39c16e9315b6cda10d5ef43fd33
+
+PODFILE CHECKSUM: b2d544929edfaa332f03260542986664a7dcbc11
+
+COCOAPODS: 1.17.0

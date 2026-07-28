@@ -6,9 +6,10 @@ Halo is an open, account-free, cross-platform nearby connectivity protocol and
 Rust SDK. Its first reference application transfers files directly between
 Android, iOS, Windows, and macOS through a Flutter UI.
 
-> Project status: early implementation. The experimental Rust discovery core,
-> real LAN providers, and a shared iOS/macOS CoreBluetooth provider now exist;
-> no SDK release, application, or four-platform device validation exists yet.
+> Project status: early implementation. The repository now contains one shared
+> Flutter discovery demo for Android and macOS, backed by the Rust discovery
+> core and narrow native BLE drivers. There is no SDK release, secure transfer
+> implementation, or four-platform real-device validation yet.
 
 Halo is not an AirDrop implementation and does not attempt to reverse engineer
 Apple's private stack. The near-term promise is smaller and testable: when two
@@ -53,6 +54,9 @@ protocol to connect safely. A fast demo app alone is not enough.
   states, not exceptional edge cases.
 - **Embeddable.** Rust owns the protocol and core behavior; Flutter is the first
   client of a deliberately small SDK.
+- **One localized UI.** Every product target uses the same Flutter screens,
+  currently localized in English and Simplified Chinese and selected from the
+  system locale.
 - **Measurable.** Performance claims include the test environment and never
   override correctness or integrity checks.
 
@@ -102,7 +106,7 @@ possible on every platform.
 | Android | BLE + parallel LAN providers | QUIC over LAN | BLE, Wi-Fi/multicast behavior, and permissions vary by OS and vendor |
 | iOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Local-network, Bluetooth, and background execution restrictions apply |
 | Windows | WinRT BLE + parallel LAN providers | QUIC over LAN | Hardware, firewall, and network profile can limit individual providers |
-| macOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Permissions, sandbox, and signing rules depend on distribution |
+| macOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Current demo is Apple Silicon-only; permissions, sandbox, and signing rules depend on distribution |
 
 BLE rendezvous is required in the first discovery milestone and runs in parallel
 with LAN providers when permission and hardware allow. It advertises minimal,
@@ -362,8 +366,8 @@ Until these ADRs land, this README states direction rather than frozen protocol.
 
 ## Development
 
-The repository has not been scaffolded yet. After Phase 0 creates the Rust
-workspace and Flutter application, the expected baseline commands will be:
+The Rust workspace and the shared Flutter application are scaffolded. Run the
+baseline checks from the repository root:
 
 ```bash
 cargo fmt --all -- --check
@@ -373,7 +377,13 @@ flutter analyze apps/halo_demo
 flutter test apps/halo_demo
 ```
 
-Platform builds and device tests will be documented beside each adapter. See
+Run the Android/macOS discovery demo from `apps/halo_demo`; the native launchers
+must not be developed as separate product UIs. The physical-device procedure is
+documented in
+[`docs/testing/android-macos-discovery.zh-CN.md`](docs/testing/android-macos-discovery.zh-CN.md).
+Current Android and macOS demo artifacts are arm64-only. Use a release APK, not
+the Flutter debug APK, when evaluating Android distribution size.
+See
 [`AGENTS.md`](AGENTS.md) for architecture boundaries, security rules, testing
 expectations, and the contribution workflow.
 

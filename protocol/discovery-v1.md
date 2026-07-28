@@ -31,12 +31,23 @@ link-local endpoint is invalid without its interface scope.
 | 28 | 2 | QUIC port | non-zero |
 | 30 | 2 | minimum protocol version | non-zero and `min <= max` |
 | 32 | 2 | maximum protocol version | non-zero and `min <= max` |
-| 34 | 8 | capability bits | unknown bits ignored during discovery |
+| 34 | 8 | capability and device metadata bits | unknown bits ignored during discovery |
 | 42 | 8 | sequence | monotonically increasing per presence |
 | 50 | 8 | nonce | query nonce, copied into its response |
 
 Receivers reject packets of any other length, unknown kind, invalid reply-port
 semantics, unsupported wire version, invalid QUIC port, or invalid protocol range.
+
+### Capability and device metadata bits
+
+Bits 60–63 (the most-significant nibble) encode an optional, untrusted coarse
+device type. `0=unknown`, `1=Android`, `2=iOS`, `3=macOS`, `4=Windows`, and
+`5=Linux`; values `6–15` are reserved and display as unknown. Bits 0–59 remain
+feature capabilities. A sender may leave the device type unset, and an older
+receiver safely ignores this additive metadata.
+
+Device type is UI metadata only. It must not influence trust, pairing,
+authorization, or transport security decisions.
 
 ## Behavior
 

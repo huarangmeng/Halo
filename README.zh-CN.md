@@ -6,8 +6,9 @@ Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Ru
 参考应用通过 Flutter UI，在 Android、iOS、Windows 和 macOS 设备之间直接传输
 文件。
 
-> 项目状态：早期实现阶段。实验性的 Rust 发现核心、真实 LAN Provider 和 iOS/macOS
-> 共用 CoreBluetooth Provider 已经存在；目前还没有 SDK 发布版、应用或四端真机验证。
+> 项目状态：早期实现阶段。仓库现在已有 Android 和 macOS 共用的 Flutter 发现 Demo，
+> 底层使用 Rust 发现核心与极薄的原生 BLE 驱动；目前还没有 SDK 发布版、安全文件传输
+> 实现或四端真机验证。
 
 Halo 不是 AirDrop 的实现，也不会尝试逆向 Apple 的私有技术栈。近期目标更小，也
 更容易验证：当两台设备都打开 Halo，并处于彼此可达的同一局域网时，它们能够互相
@@ -48,6 +49,8 @@ Flutter Demo / 第三方应用
 - **默认保护隐私。** 传输全程加密，尽量减少广播信息，绝不隐式上传用户内容。
 - **可恢复。** 取消、中断、重试和续传都是正常状态，不是偶发异常。
 - **可嵌入。** Rust 负责协议和核心行为；Flutter 是这个小型 SDK 的第一个客户端。
+- **只有一套本地化 UI。** 所有产品端共用 Flutter 页面，目前提供英文和简体中文，并
+  根据系统语言自动选择。
 - **可衡量。** 所有性能结果都必须包含测试环境，并且不能以牺牲正确性或完整性为
   代价。
 
@@ -93,7 +96,7 @@ Flutter Demo / 第三方应用
 | Android | BLE + 并行 LAN Provider | 局域网 QUIC | BLE、Wi-Fi、多播行为和权限会随系统及厂商变化 |
 | iOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | 受本地网络、蓝牙权限和后台执行限制影响 |
 | Windows | WinRT BLE + 并行 LAN Provider | 局域网 QUIC | 硬件、防火墙和网络配置可能限制部分 Provider |
-| macOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | 权限、沙盒与签名要求取决于分发方式 |
+| macOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | 当前 Demo 仅支持 Apple Silicon；权限、沙盒与签名要求取决于分发方式 |
 
 BLE 会合属于首批发现能力，在权限和硬件允许时与 LAN Provider 并行运行。它只广播
 最小化、可轮换的 Presence 信息，不负责传输文件，也不能单独证明设备身份。某个
@@ -339,8 +342,7 @@ Tokio（异步执行）、Quinn（QUIC）、rustls（TLS）、BLAKE3（内容摘
 
 ## 开发
 
-仓库目前还没有完成工程脚手架。Phase 0 创建 Rust Workspace 和 Flutter 应用后，
-预期的基础检查命令如下：
+Rust Workspace 和共用 Flutter 应用已经完成脚手架。请在仓库根目录执行基础检查：
 
 ```bash
 cargo fmt --all -- --check
@@ -350,8 +352,12 @@ flutter analyze apps/halo_demo
 flutter test apps/halo_demo
 ```
 
-各平台的构建与真机测试方式会记录在对应适配器目录中。架构边界、安全规则、测试要求
-和变更流程请参阅 [`AGENTS.md`](AGENTS.md)。
+Android 与 macOS 从 `apps/halo_demo` 启动同一个 Flutter 应用；原生 Launcher 不得演变成
+另一套产品 UI。两端真机互测步骤见
+[`docs/testing/android-macos-discovery.zh-CN.md`](docs/testing/android-macos-discovery.zh-CN.md)。
+当前 Android 与 macOS Demo 仅生成 arm64 产物；评估 Android 分发体积时应使用 Release
+APK，而不是包含 Flutter 调试运行时的 Debug APK。
+架构边界、安全规则、测试要求和变更流程请参阅 [`AGENTS.md`](AGENTS.md)。
 
 ## 许可证
 

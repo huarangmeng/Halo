@@ -8,8 +8,8 @@ use std::{
 };
 
 use halo_discovery::{
-    Capabilities, DiscoveryHandle, DiscoveryManager, DiscoverySession, LocalPresence, PresenceId,
-    ProtocolRange, ProviderId, ProviderKind, ProviderState,
+    Capabilities, DeviceType, DiscoveryHandle, DiscoveryManager, DiscoverySession, LocalPresence,
+    PresenceId, ProtocolRange, ProviderId, ProviderKind, ProviderState,
     ble::{decode_presence, encode_presence},
     providers::{MdnsProvider, PresenceV4Provider, PresenceV6Provider},
 };
@@ -23,18 +23,57 @@ static SESSIONS: OnceLock<Mutex<HashMap<u64, SessionRuntime>>> = OnceLock::new()
 #[derive(Clone, Debug)]
 pub struct DiscoveryBootstrap {
     pub session_id: u64,
+    pub presence_id: String,
+    pub device_type: DiscoveryDeviceType,
     pub ble_presence: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiscoveryPeer {
     pub presence_id: String,
+    pub device_type: DiscoveryDeviceType,
     pub compatible: bool,
     pub capabilities: u64,
     pub sources: Vec<String>,
     pub best_endpoint: Option<String>,
     pub candidate_count: u32,
     pub quarantined: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiscoveryDeviceType {
+    Unknown,
+    Android,
+    Ios,
+    Macos,
+    Windows,
+    Linux,
+}
+
+impl From<DiscoveryDeviceType> for DeviceType {
+    fn from(value: DiscoveryDeviceType) -> Self {
+        match value {
+            DiscoveryDeviceType::Unknown => Self::Unknown,
+            DiscoveryDeviceType::Android => Self::Android,
+            DiscoveryDeviceType::Ios => Self::Ios,
+            DiscoveryDeviceType::Macos => Self::Macos,
+            DiscoveryDeviceType::Windows => Self::Windows,
+            DiscoveryDeviceType::Linux => Self::Linux,
+        }
+    }
+}
+
+impl From<DeviceType> for DiscoveryDeviceType {
+    fn from(value: DeviceType) -> Self {
+        match value {
+            DeviceType::Unknown => Self::Unknown,
+            DeviceType::Android => Self::Android,
+            DeviceType::Ios => Self::Ios,
+            DeviceType::Macos => Self::Macos,
+            DeviceType::Windows => Self::Windows,
+            DeviceType::Linux => Self::Linux,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,12 +116,13 @@ struct SessionRuntime {
 pub fn discovery_start(
     quic_port: u16,
     enable_lan: bool,
+    device_type: DiscoveryDeviceType,
 ) -> Result<DiscoveryBootstrap, HaloApiError> {
     let protocol = ProtocolRange::new(1, 1).map_err(core_error)?;
     let local = LocalPresence::new(
         PresenceId::random(),
         protocol,
-        Capabilities::default(),
+        Capabilities::default().with_device_type(device_type.into()),
         quic_port,
     )
     .map_err(core_error)?;
@@ -108,6 +148,7 @@ pub fn discovery_start(
     if session_id == 0 {
         return Err(HaloApiError::InternalState);
     }
+    let presence_id = local.presence_id.to_string();
     let ble_presence = encode_presence(&local, 1).to_vec();
     let session_runtime = SessionRuntime {
         runtime,
@@ -123,6 +164,8 @@ pub fn discovery_start(
 
     Ok(DiscoveryBootstrap {
         session_id,
+        presence_id,
+        device_type,
         ble_presence,
     })
 }
@@ -217,6 +260,7 @@ fn snapshot(session: &mut SessionRuntime) -> Result<Vec<DiscoveryPeer>, HaloApiE
         .into_iter()
         .map(|peer| DiscoveryPeer {
             presence_id: peer.presence_id.to_string(),
+            device_type: peer.capabilities.device_type().into(),
             compatible: peer.compatible,
             capabilities: peer.capabilities.bits(),
             sources: peer
@@ -283,12 +327,12 @@ mod tests {
 
     #[test]
     fn ble_observation_crosses_ffi_into_rust_manager() {
-        let bootstrap =
-            discovery_start(44_330, false).unwrap_or_else(|error| panic!("start failed: {error}"));
+        let bootstrap = discovery_start(44_330, false, DiscoveryDeviceType::Macos)
+            .unwrap_or_else(|error| panic!("start failed: {error}"));
         let remote = LocalPresence::new(
             PresenceId::from_bytes([0x42; 16]),
             ProtocolRange::new(1, 1).unwrap_or_else(|error| panic!("range: {error}")),
-            Capabilities::from_bits(7),
+            Capabilities::from_bits(7).with_device_type(DeviceType::Android),
             4433,
         )
         .unwrap_or_else(|error| panic!("remote: {error}"));
@@ -302,6 +346,9 @@ mod tests {
 
         assert_eq!(peers.len(), 1);
         assert_eq!(peers[0].presence_id, remote.presence_id.to_string());
+        assert_eq!(peers[0].device_type, DiscoveryDeviceType::Android);
+        assert_eq!(bootstrap.device_type, DiscoveryDeviceType::Macos);
+        assert!(!bootstrap.presence_id.is_empty());
         assert_eq!(peers[0].sources, vec!["ble-android"]);
         assert!(peers[0].best_endpoint.is_none());
         discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop failed: {error}"));
@@ -309,8 +356,8 @@ mod tests {
 
     #[test]
     fn malformed_native_bytes_are_rejected_by_rust() {
-        let bootstrap =
-            discovery_start(44_331, false).unwrap_or_else(|error| panic!("start failed: {error}"));
+        let bootstrap = discovery_start(44_331, false, DiscoveryDeviceType::Android)
+            .unwrap_or_else(|error| panic!("start failed: {error}"));
         let error = discovery_submit_ble(bootstrap.session_id, "macos".to_owned(), vec![0; 58])
             .expect_err("invalid descriptor must fail");
         assert!(matches!(error, HaloApiError::Core { .. }));

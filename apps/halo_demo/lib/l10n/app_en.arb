@@ -1,0 +1,85 @@
+{
+  "@@locale": "en",
+  "appTitle": "Halo",
+  "appSubtitle": "Nearby discovery · Flutter UI · Rust core · {platform}",
+  "@appSubtitle": {
+    "placeholders": {"platform": {"type": "String"}}
+  },
+  "platformAndroid": "Android",
+  "platformIos": "iOS",
+  "platformMacos": "macOS",
+  "platformWindows": "Windows",
+  "platformLinux": "Linux",
+  "deviceTypeUnknown": "Unknown",
+  "thisDevice": "This device",
+  "discoverySessionId": "Discovery session ID",
+  "discoverySessionIdPending": "Generated when discovery starts",
+  "deviceTypeLabel": "Device type",
+  "peerIdLabel": "Peer ID",
+  "discoverySourcesLabel": "Discovery sources",
+  "endpointLabel": "Endpoint",
+  "startDiscovery": "Start discovery",
+  "stop": "Stop",
+  "nearbyDevices": "Nearby devices ({count})",
+  "@nearbyDevices": {
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "nearbyHaloDevice": "Nearby Halo device",
+  "compatible": "Compatible",
+  "incompatible": "Incompatible",
+  "bleAwaitingLan": "BLE rendezvous; awaiting LAN endpoint",
+  "emptyPeers": "Keep Halo open in the foreground on both devices.\nBLE and LAN discovery run in parallel after you start.",
+  "discoveryStatusSemantics": "Discovery status: {status}",
+  "@discoveryStatusSemantics": {
+    "placeholders": {"status": {"type": "String"}}
+  },
+  "statusStopped": "Stopped",
+  "statusPreparing": "Waiting for permission",
+  "statusStarting": "Starting all providers",
+  "statusRunning": "Discovering nearby devices",
+  "statusDegraded": "Discovery partially available",
+  "statusFailed": "Discovery needs attention",
+  "noticeStopped": "Discovery is stopped. No radio or network work is running.",
+  "noticePermissionContext": "Some Android devices require Nearby devices and precise location before returning BLE scan results. Halo does not derive, store, or transmit your location.",
+  "noticePermissionDenied": "Required nearby-device, location, or local-network permission was denied.",
+  "noticeLocationServicesDisabled": "Android location services are off, so this device may suppress BLE scan results. Turn on Location, then start discovery again.",
+  "noticeMacosBluetoothPermissionDenied": "macOS blocked Bluetooth for Halo. Enable Halo in System Settings > Privacy & Security > Bluetooth, then fully restart the app. Ad-hoc debug rebuilds may require a new grant.",
+  "noticeStarting": "Rust is starting BLE, mDNS, IPv4 and IPv6 discovery.",
+  "noticeRunning": "BLE and Rust LAN providers are running in parallel.",
+  "noticeNativeEventStopped": "The platform BLE event stream stopped: {detail}",
+  "@noticeNativeEventStopped": {
+    "placeholders": {"detail": {"type": "String"}}
+  },
+  "noticeStartFailed": "Could not start discovery: {detail}",
+  "@noticeStartFailed": {
+    "placeholders": {"detail": {"type": "String"}}
+  },
+  "noticeCleanupFailed": "Discovery stopped with a cleanup error: {detail}",
+  "@noticeCleanupFailed": {
+    "placeholders": {"detail": {"type": "String"}}
+  },
+  "noticeBleUnavailable": "BLE is {state}; LAN providers remain independent.",
+  "@noticeBleUnavailable": {
+    "placeholders": {"state": {"type": "String"}}
+  },
+  "noticeDiagnostic": "{operation}: {detail}",
+  "@noticeDiagnostic": {
+    "placeholders": {
+      "operation": {"type": "String"},
+      "detail": {"type": "String"}
+    }
+  },
+  "noticeRustRejected": "Rust rejected a native discovery event: {detail}",
+  "@noticeRustRejected": {
+    "placeholders": {"detail": {"type": "String"}}
+  },
+  "providerStarting": "starting",
+  "providerReady": "ready",
+  "providerPermissionRequired": "waiting for permission",
+  "providerPermissionDenied": "permission denied",
+  "providerHardwareOff": "powered off",
+  "providerUnsupported": "unsupported",
+  "providerTemporarilyUnavailable": "temporarily unavailable",
+  "providerStopped": "stopped",
+  "providerDegraded": "degraded"
+}

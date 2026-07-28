@@ -103,11 +103,45 @@ impl ProtocolRange {
     }
 }
 
+/// Coarse platform type advertised as an untrusted discovery hint.
+///
+/// This is presentation metadata, not an authenticated identity claim.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
+pub enum DeviceType {
+    #[default]
+    Unknown = 0,
+    Android = 1,
+    Ios = 2,
+    Macos = 3,
+    Windows = 4,
+    Linux = 5,
+}
+
+impl DeviceType {
+    const fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::Android,
+            2 => Self::Ios,
+            3 => Self::Macos,
+            4 => Self::Windows,
+            5 => Self::Linux,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 /// Capability bits advertised as untrusted discovery hints.
+///
+/// The upper nibble is reserved for [`DeviceType`]. Existing peers that do not
+/// set it remain compatible and are reported as [`DeviceType::Unknown`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Capabilities(u64);
 
 impl Capabilities {
+    const DEVICE_TYPE_SHIFT: u32 = 60;
+    const DEVICE_TYPE_MASK: u64 = 0xf_u64 << Self::DEVICE_TYPE_SHIFT;
+
     /// Creates a bit set from its wire representation.
     #[must_use]
     pub const fn from_bits(bits: u64) -> Self {
@@ -118,6 +152,47 @@ impl Capabilities {
     #[must_use]
     pub const fn bits(self) -> u64 {
         self.0
+    }
+
+    /// Returns a copy carrying one coarse device type in the reserved nibble.
+    #[must_use]
+    pub const fn with_device_type(self, device_type: DeviceType) -> Self {
+        Self((self.0 & !Self::DEVICE_TYPE_MASK) | ((device_type as u64) << Self::DEVICE_TYPE_SHIFT))
+    }
+
+    /// Decodes the untrusted coarse device type metadata.
+    #[must_use]
+    pub const fn device_type(self) -> DeviceType {
+        DeviceType::from_code(((self.0 & Self::DEVICE_TYPE_MASK) >> Self::DEVICE_TYPE_SHIFT) as u8)
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+
+    #[test]
+    fn device_type_round_trips_without_changing_feature_bits() {
+        let features = Capabilities::from_bits(0x0123_4567_89ab_cdef);
+        let android = features.with_device_type(DeviceType::Android);
+        assert_eq!(android.device_type(), DeviceType::Android);
+        assert_eq!(
+            android.bits() & 0x0fff_ffff_ffff_ffff,
+            0x0123_4567_89ab_cdef
+        );
+        assert_eq!(
+            android.with_device_type(DeviceType::Macos).device_type(),
+            DeviceType::Macos
+        );
+    }
+
+    #[test]
+    fn unset_or_unknown_device_type_is_unknown() {
+        assert_eq!(Capabilities::default().device_type(), DeviceType::Unknown);
+        assert_eq!(
+            Capabilities::from_bits(0xf000_0000_0000_0000).device_type(),
+            DeviceType::Unknown
+        );
     }
 }
 
