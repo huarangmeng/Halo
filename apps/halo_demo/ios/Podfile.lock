@@ -1,0 +1,22 @@
+PODS:
+  - Flutter (1.0.0)
+  - halo_ffi (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - halo_ffi (from `.symlinks/plugins/halo_ffi/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  halo_ffi:
+    :path: ".symlinks/plugins/halo_ffi/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  halo_ffi: 468fbcc8f20d4b3cb911536fee8e47cc5aafa422
+
+PODFILE CHECKSUM: 1857a7cdb7dfafe45f2b0e9a9af44644190f7506
+
+COCOAPODS: 1.17.0

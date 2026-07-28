@@ -20,6 +20,7 @@ enum DiscoveryNotice {
   permissionContext,
   permissionDenied,
   locationServicesDisabled,
+  iosBluetoothPermissionDenied,
   macosBluetoothPermissionDenied,
   starting,
   running,
@@ -27,13 +28,27 @@ enum DiscoveryNotice {
   startFailed,
   cleanupFailed,
   bleUnavailable,
+  providerHealthDegraded,
   diagnostic,
   rustRejected,
+}
+
+class DiscoveryDiagnosticEntry {
+  const DiscoveryDiagnosticEntry({
+    required this.operation,
+    required this.detail,
+  });
+
+  final String operation;
+  final String detail;
 }
 
 class DiscoveryController extends ChangeNotifier {
   static const _methods = MethodChannel('org.halo.discovery/ble');
   static const _events = EventChannel('org.halo.discovery/ble-events');
+
+  DiscoveryController({String? platformOverride})
+    : platform = platformOverride ?? _detectedPlatform();
 
   DiscoveryRunState state = DiscoveryRunState.stopped;
   DiscoveryNotice notice = DiscoveryNotice.stopped;
@@ -42,6 +57,10 @@ class DiscoveryController extends ChangeNotifier {
   String? localPresenceId;
   DiscoveryDeviceType? localDeviceType;
   List<DiscoveryPeer> peers = const [];
+  List<DiscoveryProviderStatus> providerStatuses = const [];
+  List<DiscoveryDiagnosticEntry> diagnostics = const [];
+
+  final String platform;
 
   BigInt? _sessionId;
   StreamSubscription<Object?>? _nativeEvents;
@@ -49,6 +68,7 @@ class DiscoveryController extends ChangeNotifier {
   Future<void>? _startOperation;
   Future<void>? _stopOperation;
   bool _stopRequested = false;
+  bool _refreshing = false;
 
   bool get canStart =>
       _startOperation == null &&
@@ -59,10 +79,11 @@ class DiscoveryController extends ChangeNotifier {
       state != DiscoveryRunState.stopped || _startOperation != null;
   bool get isRunning =>
       state == DiscoveryRunState.running || state == DiscoveryRunState.degraded;
-  String get platform => Platform.isAndroid ? 'android' : 'macos';
-  DiscoveryDeviceType get platformDeviceType => Platform.isAndroid
-      ? DiscoveryDeviceType.android
-      : DiscoveryDeviceType.macos;
+  DiscoveryDeviceType get platformDeviceType => switch (platform) {
+    'android' => DiscoveryDeviceType.android,
+    'ios' => DiscoveryDeviceType.ios,
+    _ => DiscoveryDeviceType.macos,
+  };
 
   Future<void> start() {
     if (!canStart) return Future<void>.value();
@@ -75,6 +96,9 @@ class DiscoveryController extends ChangeNotifier {
   }
 
   Future<void> _start() async {
+    peers = const [];
+    providerStatuses = const [];
+    diagnostics = const [];
     state = DiscoveryRunState.preparing;
     _setNotice(DiscoveryNotice.permissionContext);
     notifyListeners();
@@ -94,8 +118,10 @@ class DiscoveryController extends ChangeNotifier {
         _setNotice(switch (reason) {
           'location_services_disabled' =>
             DiscoveryNotice.locationServicesDisabled,
-          'permission_denied' when Platform.isMacOS =>
+          'permission_denied' when platform == 'macos' =>
             DiscoveryNotice.macosBluetoothPermissionDenied,
+          'permission_denied' when platform == 'ios' =>
+            DiscoveryNotice.iosBluetoothPermissionDenied,
           _ => DiscoveryNotice.permissionDenied,
         });
         notifyListeners();
@@ -154,6 +180,7 @@ class DiscoveryController extends ChangeNotifier {
       );
       state = DiscoveryRunState.running;
       _setNotice(DiscoveryNotice.running);
+      await _refreshSnapshot();
       notifyListeners();
     } catch (error) {
       await _cleanupAfterFailedStart();
@@ -192,6 +219,8 @@ class DiscoveryController extends ChangeNotifier {
       return;
     }
     peers = const [];
+    providerStatuses = const [];
+    diagnostics = const [];
     localPresenceId = null;
     localDeviceType = null;
     state = DiscoveryRunState.stopped;
@@ -226,18 +255,26 @@ class DiscoveryController extends ChangeNotifier {
         } else if (rawState != 'starting') {
           state = DiscoveryRunState.degraded;
           _setNotice(
-            rawState == 'permission_denied' && Platform.isMacOS
+            rawState == 'permission_denied' && platform == 'macos'
                 ? DiscoveryNotice.macosBluetoothPermissionDenied
+                : rawState == 'permission_denied' && platform == 'ios'
+                ? DiscoveryNotice.iosBluetoothPermissionDenied
                 : DiscoveryNotice.bleUnavailable,
             detail: rawState,
           );
         }
         notifyListeners();
       } else if (type == 'diagnostic') {
+        final operation = '${rawEvent['operation']}';
+        final detail = '${rawEvent['detail']}';
+        diagnostics = [
+          DiscoveryDiagnosticEntry(operation: operation, detail: detail),
+          ...diagnostics.take(11),
+        ];
         _setNotice(
           DiscoveryNotice.diagnostic,
-          operation: '${rawEvent['operation']}',
-          detail: '${rawEvent['detail']}',
+          operation: operation,
+          detail: detail,
         );
         notifyListeners();
       }
@@ -250,12 +287,17 @@ class DiscoveryController extends ChangeNotifier {
 
   Future<void> _refreshSnapshot() async {
     final sessionId = _sessionId;
-    if (sessionId == null) return;
+    if (sessionId == null || _refreshing) return;
+    _refreshing = true;
     try {
       peers = await discoverySnapshot(sessionId: sessionId);
+      providerStatuses = await discoveryProviderStatuses(sessionId: sessionId);
+      _applyProviderHealth();
       notifyListeners();
     } catch (_) {
       // A simultaneous stop closes the session; stop owns the visible state.
+    } finally {
+      _refreshing = false;
     }
   }
 
@@ -268,6 +310,7 @@ class DiscoveryController extends ChangeNotifier {
     _sessionId = null;
     localPresenceId = null;
     localDeviceType = null;
+    providerStatuses = const [];
     try {
       await _methods.invokeMethod<void>('stop');
       if (sessionId != null) await discoveryStop(sessionId: sessionId);
@@ -287,6 +330,30 @@ class DiscoveryController extends ChangeNotifier {
     'stopped' => PlatformProviderState.stopped,
     _ => PlatformProviderState.degraded,
   };
+
+  void _applyProviderHealth() {
+    if (!isRunning) return;
+    final unhealthy = providerStatuses
+        .where(
+          (provider) =>
+              provider.state != 'ready' && provider.state != 'starting',
+        )
+        .map((provider) => provider.name)
+        .toList(growable: false);
+    if (unhealthy.isNotEmpty) {
+      state = DiscoveryRunState.degraded;
+      if (notice == DiscoveryNotice.running ||
+          notice == DiscoveryNotice.starting) {
+        _setNotice(
+          DiscoveryNotice.providerHealthDegraded,
+          detail: unhealthy.join(', '),
+        );
+      }
+    } else if (providerStatuses.any((provider) => provider.state == 'ready')) {
+      state = DiscoveryRunState.running;
+      _setNotice(DiscoveryNotice.running);
+    }
+  }
 
   String _safeError(Object error) {
     final text = error.toString();
@@ -319,3 +386,9 @@ class DiscoveryController extends ChangeNotifier {
     }
   }
 }
+
+String _detectedPlatform() => Platform.isAndroid
+    ? 'android'
+    : Platform.isIOS
+    ? 'ios'
+    : 'macos';

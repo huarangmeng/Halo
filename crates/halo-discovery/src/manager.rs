@@ -201,6 +201,18 @@ impl DiscoveryHandle {
             .map_err(|_| DiscoveryError::SessionClosed)?;
         receiver.await.map_err(|_| DiscoveryError::SessionClosed)
     }
+
+    /// Returns a coherent snapshot of every provider state reported so far.
+    pub async fn provider_states(
+        &self,
+    ) -> Result<Vec<(ProviderId, ProviderState)>, DiscoveryError> {
+        let (sender, receiver) = oneshot::channel();
+        self.input
+            .send(ManagerInput::ProviderSnapshot(sender))
+            .await
+            .map_err(|_| DiscoveryError::SessionClosed)?;
+        receiver.await.map_err(|_| DiscoveryError::SessionClosed)
+    }
 }
 
 /// Owns provider and aggregation tasks for one discovery lifetime.
@@ -253,6 +265,7 @@ async fn run_manager(
     cancel: CancellationToken,
 ) {
     let mut peers: HashMap<PresenceId, PeerRecord> = HashMap::new();
+    let mut provider_states: HashMap<ProviderId, ProviderState> = HashMap::new();
     let mut expiry = tokio::time::interval(config.expiry_interval);
     expiry.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -262,7 +275,14 @@ async fn run_manager(
             () = cancel.cancelled() => break,
             maybe_input = input.recv() => {
                 let Some(input) = maybe_input else { break };
-                process_input(input, &local, &config, &mut peers, &events);
+                process_input(
+                    input,
+                    &local,
+                    &config,
+                    &mut peers,
+                    &mut provider_states,
+                    &events,
+                );
             }
             _ = expiry.tick() => expire_stale(&local, &mut peers, &events),
         }
@@ -274,6 +294,7 @@ fn process_input(
     local: &LocalPresence,
     config: &DiscoveryConfig,
     peers: &mut HashMap<PresenceId, PeerRecord>,
+    provider_states: &mut HashMap<ProviderId, ProviderState>,
     events: &broadcast::Sender<DiscoveryEvent>,
 ) {
     match input {
@@ -285,6 +306,7 @@ fn process_input(
             presence_id,
         } => withdraw_provider(&provider, presence_id, local, peers, events),
         ManagerInput::ProviderState { provider, state } => {
+            provider_states.insert(provider.clone(), state.clone());
             let _receiver_count = events.send(DiscoveryEvent::ProviderChanged { provider, state });
         }
         ManagerInput::ConnectionResult {
@@ -298,6 +320,14 @@ fn process_input(
                 .map(|(&id, peer)| snapshot_peer(id, peer, local.protocol))
                 .collect::<Vec<_>>();
             snapshot.sort_by_key(|peer| peer.presence_id);
+            let _send_result = sender.send(snapshot);
+        }
+        ManagerInput::ProviderSnapshot(sender) => {
+            let mut snapshot = provider_states
+                .iter()
+                .map(|(provider, state)| (provider.clone(), state.clone()))
+                .collect::<Vec<_>>();
+            snapshot.sort_by(|left, right| left.0.cmp(&right.0));
             let _send_result = sender.send(snapshot);
         }
     }

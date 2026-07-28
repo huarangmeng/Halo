@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Halo";
+"NSBluetoothAlwaysUsageDescription" = "Halo uses Bluetooth while open to discover nearby Halo devices.";
+"NSLocalNetworkUsageDescription" = "Halo uses your local network to discover and connect directly to nearby devices.";

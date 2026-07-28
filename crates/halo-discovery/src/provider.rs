@@ -21,6 +21,7 @@ pub(crate) enum ManagerInput {
         outcome: crate::ConnectionOutcome,
     },
     Snapshot(tokio::sync::oneshot::Sender<Vec<crate::PeerSnapshot>>),
+    ProviderSnapshot(tokio::sync::oneshot::Sender<Vec<(crate::ProviderId, crate::ProviderState)>>),
 }
 
 /// Restricted capabilities passed to a discovery provider.

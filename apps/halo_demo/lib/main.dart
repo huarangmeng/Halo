@@ -85,12 +85,24 @@ class HaloDiscoveryPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      l10n.appTitle,
-                      style: const TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l10n.appTitle,
+                            style: const TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton.filledTonal(
+                          tooltip: l10n.discoveryDiagnostics,
+                          onPressed: () =>
+                              _showDiagnostics(context, controller),
+                          icon: const Icon(Icons.monitor_heart_outlined),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -175,7 +187,7 @@ class _LocalDevicePanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.laptop_mac),
+                Icon(_deviceTypeIcon(deviceType)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -199,6 +211,107 @@ class _LocalDevicePanel extends StatelessWidget {
                 context,
               ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showDiagnostics(
+  BuildContext context,
+  DiscoveryController controller,
+) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) => _DiagnosticsSheet(controller: controller),
+  ),
+);
+
+class _DiagnosticsSheet extends StatelessWidget {
+  const _DiagnosticsSheet({required this.controller});
+
+  final DiscoveryController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+        ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+          children: [
+            Text(
+              l10n.discoveryDiagnostics,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 6),
+            Text(l10n.diagnosticsDescription),
+            const SizedBox(height: 20),
+            _PeerField(
+              label: l10n.discoverySessionId,
+              value:
+                  controller.localPresenceId ?? l10n.discoverySessionIdPending,
+            ),
+            const SizedBox(height: 8),
+            _PeerField(
+              label: l10n.diagnosticsSessionState,
+              value: _statusLabel(l10n, controller.state),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              l10n.diagnosticsProviders,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (controller.providerStatuses.isEmpty)
+              Text(l10n.diagnosticsNoProviders)
+            else
+              ...controller.providerStatuses.map(
+                (provider) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    provider.state == 'ready'
+                        ? Icons.check_circle_outline
+                        : Icons.info_outline,
+                    color: provider.state == 'ready'
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.error,
+                  ),
+                  title: Text(provider.name),
+                  subtitle: Text(
+                    [
+                      _providerKindLabel(l10n, provider.kind),
+                      _providerStateLabel(l10n, provider.state),
+                      if (provider.detail != null) provider.detail!,
+                    ].join(' · '),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            Text(
+              l10n.diagnosticsRecentEvents,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (controller.diagnostics.isEmpty)
+              Text(l10n.diagnosticsNoEvents)
+            else
+              ...controller.diagnostics.map(
+                (entry) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: const Icon(Icons.article_outlined),
+                  title: Text(entry.operation),
+                  subtitle: Text(entry.detail),
+                ),
+              ),
           ],
         ),
       ),
@@ -371,7 +484,11 @@ class _EmptyPeers extends StatelessWidget {
 }
 
 String _platformLabel(AppLocalizations l10n, String platform) =>
-    platform == 'android' ? l10n.platformAndroid : l10n.platformMacos;
+    switch (platform) {
+      'android' => l10n.platformAndroid,
+      'ios' => l10n.platformIos,
+      _ => l10n.platformMacos,
+    };
 
 String _deviceTypeLabel(
   AppLocalizations l10n,
@@ -384,6 +501,16 @@ String _deviceTypeLabel(
   DiscoveryDeviceType.linux => l10n.platformLinux,
   DiscoveryDeviceType.unknown => l10n.deviceTypeUnknown,
 };
+
+IconData _deviceTypeIcon(DiscoveryDeviceType deviceType) =>
+    switch (deviceType) {
+      DiscoveryDeviceType.android => Icons.phone_android,
+      DiscoveryDeviceType.ios => Icons.phone_iphone,
+      DiscoveryDeviceType.macos ||
+      DiscoveryDeviceType.windows ||
+      DiscoveryDeviceType.linux => Icons.laptop,
+      DiscoveryDeviceType.unknown => Icons.devices_other,
+    };
 
 String _statusLabel(AppLocalizations l10n, DiscoveryRunState state) =>
     switch (state) {
@@ -399,10 +526,15 @@ String _noticeText(AppLocalizations l10n, DiscoveryController controller) {
   final detail = controller.noticeDetail ?? '';
   return switch (controller.notice) {
     DiscoveryNotice.stopped => l10n.noticeStopped,
-    DiscoveryNotice.permissionContext => l10n.noticePermissionContext,
+    DiscoveryNotice.permissionContext =>
+      controller.platform == 'android'
+          ? l10n.noticePermissionContext
+          : l10n.noticeApplePermissionContext,
     DiscoveryNotice.permissionDenied => l10n.noticePermissionDenied,
     DiscoveryNotice.locationServicesDisabled =>
       l10n.noticeLocationServicesDisabled,
+    DiscoveryNotice.iosBluetoothPermissionDenied =>
+      l10n.noticeIosBluetoothPermissionDenied,
     DiscoveryNotice.macosBluetoothPermissionDenied =>
       l10n.noticeMacosBluetoothPermissionDenied,
     DiscoveryNotice.starting => l10n.noticeStarting,
@@ -412,6 +544,9 @@ String _noticeText(AppLocalizations l10n, DiscoveryController controller) {
     DiscoveryNotice.cleanupFailed => l10n.noticeCleanupFailed(detail),
     DiscoveryNotice.bleUnavailable => l10n.noticeBleUnavailable(
       _providerStateLabel(l10n, detail),
+    ),
+    DiscoveryNotice.providerHealthDegraded => l10n.noticeProviderHealthDegraded(
+      detail,
     ),
     DiscoveryNotice.diagnostic => l10n.noticeDiagnostic(
       controller.noticeOperation ?? 'BLE',
@@ -431,5 +566,15 @@ String _providerStateLabel(AppLocalizations l10n, String state) =>
       'unsupported' => l10n.providerUnsupported,
       'temporarily_unavailable' => l10n.providerTemporarilyUnavailable,
       'stopped' => l10n.providerStopped,
+      'failed_recoverable' => l10n.providerFailedRecoverable,
+      'failed' => l10n.providerFailed,
       _ => l10n.providerDegraded,
     };
+
+String _providerKindLabel(AppLocalizations l10n, String kind) => switch (kind) {
+  'ble' => 'BLE',
+  'mdns' => 'mDNS',
+  'presence_v4' => l10n.providerPresenceV4,
+  'presence_v6' => l10n.providerPresenceV6,
+  _ => kind,
+};

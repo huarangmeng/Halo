@@ -83,6 +83,29 @@ class AppLocalizationsEn extends AppLocalizations {
       'Keep Halo open in the foreground on both devices.\nBLE and LAN discovery run in parallel after you start.';
 
   @override
+  String get discoveryDiagnostics => 'Discovery diagnostics';
+
+  @override
+  String get diagnosticsDescription =>
+      'Live provider health reported by the Rust discovery core. This data is local and intended for troubleshooting.';
+
+  @override
+  String get diagnosticsSessionState => 'Session state';
+
+  @override
+  String get diagnosticsProviders => 'Provider health';
+
+  @override
+  String get diagnosticsNoProviders =>
+      'Start discovery to inspect provider health.';
+
+  @override
+  String get diagnosticsRecentEvents => 'Recent native BLE events';
+
+  @override
+  String get diagnosticsNoEvents => 'No native BLE errors have been reported.';
+
+  @override
   String discoveryStatusSemantics(String status) {
     return 'Discovery status: $status';
   }
@@ -114,12 +137,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'Some Android devices require Nearby devices and precise location before returning BLE scan results. Halo does not derive, store, or transmit your location.';
 
   @override
+  String get noticeApplePermissionContext =>
+      'Halo needs Bluetooth and local-network access while open to discover nearby devices. Discovery metadata stays on your local links.';
+
+  @override
   String get noticePermissionDenied =>
       'Required nearby-device, location, or local-network permission was denied.';
 
   @override
   String get noticeLocationServicesDisabled =>
       'Android location services are off, so this device may suppress BLE scan results. Turn on Location, then start discovery again.';
+
+  @override
+  String get noticeIosBluetoothPermissionDenied =>
+      'iOS blocked Bluetooth for Halo. Enable Bluetooth access for Halo in Settings > Privacy & Security > Bluetooth, then start discovery again.';
 
   @override
   String get noticeMacosBluetoothPermissionDenied =>
@@ -151,6 +182,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String noticeBleUnavailable(String state) {
     return 'BLE is $state; LAN providers remain independent.';
+  }
+
+  @override
+  String noticeProviderHealthDegraded(String providers) {
+    return 'Some providers need attention ($providers); healthy providers keep running.';
   }
 
   @override
@@ -189,4 +225,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get providerDegraded => 'degraded';
+
+  @override
+  String get providerFailedRecoverable => 'failed; retry available';
+
+  @override
+  String get providerFailed => 'failed';
+
+  @override
+  String get providerPresenceV4 => 'IPv4 Presence';
+
+  @override
+  String get providerPresenceV6 => 'IPv6 Presence';
 }

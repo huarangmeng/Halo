@@ -68,4 +68,42 @@ void main() {
     );
     expect(find.text('aaaaaaaa…'), findsNothing);
   });
+
+  testWidgets('renders iOS and Rust provider diagnostics', (tester) async {
+    final controller = DiscoveryController(platformOverride: 'ios')
+      ..providerStatuses = const [
+        DiscoveryProviderStatus(
+          name: 'ble-ios',
+          kind: 'ble',
+          state: 'permission_denied',
+          detail: 'denied by user',
+        ),
+        DiscoveryProviderStatus(name: 'mdns', kind: 'mdns', state: 'ready'),
+      ]
+      ..diagnostics = const [
+        DiscoveryDiagnosticEntry(
+          operation: 'corebluetooth',
+          detail: 'advertising failed',
+        ),
+      ];
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: HaloDiscoveryPage(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Rust core · iOS'), findsOneWidget);
+    await tester.tap(find.byTooltip('Discovery diagnostics'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ble-ios'), findsOneWidget);
+    expect(find.text('mdns'), findsOneWidget);
+    expect(find.textContaining('permission denied'), findsOneWidget);
+    expect(find.text('advertising failed'), findsOneWidget);
+  });
 }

@@ -236,6 +236,48 @@ abstract class AppLocalizations {
   /// **'Keep Halo open in the foreground on both devices.\nBLE and LAN discovery run in parallel after you start.'**
   String get emptyPeers;
 
+  /// No description provided for @discoveryDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Discovery diagnostics'**
+  String get discoveryDiagnostics;
+
+  /// No description provided for @diagnosticsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Live provider health reported by the Rust discovery core. This data is local and intended for troubleshooting.'**
+  String get diagnosticsDescription;
+
+  /// No description provided for @diagnosticsSessionState.
+  ///
+  /// In en, this message translates to:
+  /// **'Session state'**
+  String get diagnosticsSessionState;
+
+  /// No description provided for @diagnosticsProviders.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider health'**
+  String get diagnosticsProviders;
+
+  /// No description provided for @diagnosticsNoProviders.
+  ///
+  /// In en, this message translates to:
+  /// **'Start discovery to inspect provider health.'**
+  String get diagnosticsNoProviders;
+
+  /// No description provided for @diagnosticsRecentEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent native BLE events'**
+  String get diagnosticsRecentEvents;
+
+  /// No description provided for @diagnosticsNoEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'No native BLE errors have been reported.'**
+  String get diagnosticsNoEvents;
+
   /// No description provided for @discoveryStatusSemantics.
   ///
   /// In en, this message translates to:
@@ -290,6 +332,12 @@ abstract class AppLocalizations {
   /// **'Some Android devices require Nearby devices and precise location before returning BLE scan results. Halo does not derive, store, or transmit your location.'**
   String get noticePermissionContext;
 
+  /// No description provided for @noticeApplePermissionContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Halo needs Bluetooth and local-network access while open to discover nearby devices. Discovery metadata stays on your local links.'**
+  String get noticeApplePermissionContext;
+
   /// No description provided for @noticePermissionDenied.
   ///
   /// In en, this message translates to:
@@ -301,6 +349,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Android location services are off, so this device may suppress BLE scan results. Turn on Location, then start discovery again.'**
   String get noticeLocationServicesDisabled;
+
+  /// No description provided for @noticeIosBluetoothPermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'iOS blocked Bluetooth for Halo. Enable Bluetooth access for Halo in Settings > Privacy & Security > Bluetooth, then start discovery again.'**
+  String get noticeIosBluetoothPermissionDenied;
 
   /// No description provided for @noticeMacosBluetoothPermissionDenied.
   ///
@@ -343,6 +397,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'BLE is {state}; LAN providers remain independent.'**
   String noticeBleUnavailable(String state);
+
+  /// No description provided for @noticeProviderHealthDegraded.
+  ///
+  /// In en, this message translates to:
+  /// **'Some providers need attention ({providers}); healthy providers keep running.'**
+  String noticeProviderHealthDegraded(String providers);
 
   /// No description provided for @noticeDiagnostic.
   ///
@@ -409,6 +469,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'degraded'**
   String get providerDegraded;
+
+  /// No description provided for @providerFailedRecoverable.
+  ///
+  /// In en, this message translates to:
+  /// **'failed; retry available'**
+  String get providerFailedRecoverable;
+
+  /// No description provided for @providerFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'failed'**
+  String get providerFailed;
+
+  /// No description provided for @providerPresenceV4.
+  ///
+  /// In en, this message translates to:
+  /// **'IPv4 Presence'**
+  String get providerPresenceV4;
+
+  /// No description provided for @providerPresenceV6.
+  ///
+  /// In en, this message translates to:
+  /// **'IPv6 Presence'**
+  String get providerPresenceV6;
 }
 
 class _AppLocalizationsDelegate

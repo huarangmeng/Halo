@@ -66,7 +66,7 @@ class HaloRustLib
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 690943630;
+  int get rustContentHash => -1370488548;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -78,6 +78,10 @@ class HaloRustLib
 }
 
 abstract class HaloRustLibApi extends BaseApi {
+  Future<List<DiscoveryProviderStatus>> crateApiDiscoveryProviderStatuses({
+    required BigInt sessionId,
+  });
+
   Future<Uint8List> crateApiDiscoveryRefreshBlePresence({
     required BigInt sessionId,
   });
@@ -118,7 +122,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   });
 
   @override
-  Future<Uint8List> crateApiDiscoveryRefreshBlePresence({
+  Future<List<DiscoveryProviderStatus>> crateApiDiscoveryProviderStatuses({
     required BigInt sessionId,
   }) {
     return handler.executeNormal(
@@ -130,6 +134,39 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
             generalizedFrbRustBinding,
             serializer,
             funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_discovery_provider_status,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiDiscoveryProviderStatusesConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDiscoveryProviderStatusesConstMeta =>
+      const TaskConstMeta(
+        debugName: "discovery_provider_statuses",
+        argNames: ["sessionId"],
+      );
+
+  @override
+  Future<Uint8List> crateApiDiscoveryRefreshBlePresence({
+    required BigInt sessionId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
             port: port_,
           );
         },
@@ -168,7 +205,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -201,7 +238,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -237,7 +274,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -267,7 +304,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -301,7 +338,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -372,6 +409,20 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  DiscoveryProviderStatus dco_decode_discovery_provider_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return DiscoveryProviderStatus(
+      name: dco_decode_String(arr[0]),
+      kind: dco_decode_String(arr[1]),
+      state: dco_decode_String(arr[2]),
+      detail: dco_decode_opt_String(arr[3]),
+    );
+  }
+
+  @protected
   HaloApiError dco_decode_halo_api_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -404,6 +455,16 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   List<DiscoveryPeer> dco_decode_list_discovery_peer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_discovery_peer).toList();
+  }
+
+  @protected
+  List<DiscoveryProviderStatus> dco_decode_list_discovery_provider_status(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_discovery_provider_status)
+        .toList();
   }
 
   @protected
@@ -523,6 +584,23 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  DiscoveryProviderStatus sse_decode_discovery_provider_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_kind = sse_decode_String(deserializer);
+    var var_state = sse_decode_String(deserializer);
+    var var_detail = sse_decode_opt_String(deserializer);
+    return DiscoveryProviderStatus(
+      name: var_name,
+      kind: var_kind,
+      state: var_state,
+      detail: var_detail,
+    );
+  }
+
+  @protected
   HaloApiError sse_decode_halo_api_error(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -571,6 +649,20 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     var ans_ = <DiscoveryPeer>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_discovery_peer(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<DiscoveryProviderStatus> sse_decode_list_discovery_provider_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <DiscoveryProviderStatus>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_discovery_provider_status(deserializer));
     }
     return ans_;
   }
@@ -685,6 +777,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_discovery_provider_status(
+    DiscoveryProviderStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_String(self.kind, serializer);
+    sse_encode_String(self.state, serializer);
+    sse_encode_opt_String(self.detail, serializer);
+  }
+
+  @protected
   void sse_encode_halo_api_error(HaloApiError self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
@@ -725,6 +829,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_discovery_peer(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_discovery_provider_status(
+    List<DiscoveryProviderStatus> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_discovery_provider_status(item, serializer);
     }
   }
 

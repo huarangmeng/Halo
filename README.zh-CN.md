@@ -6,9 +6,10 @@ Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Ru
 参考应用通过 Flutter UI，在 Android、iOS、Windows 和 macOS 设备之间直接传输
 文件。
 
-> 项目状态：早期实现阶段。仓库现在已有 Android 和 macOS 共用的 Flutter 发现 Demo，
-> 底层使用 Rust 发现核心与极薄的原生 BLE 驱动；目前还没有 SDK 发布版、安全文件传输
-> 实现或四端真机验证。
+> 项目状态：早期实现阶段。仓库现在已有 Android、iOS 和 macOS 共用的 Flutter 发现
+> Demo，底层使用 Rust 发现核心与极薄的原生 BLE 驱动。Android ↔ macOS 已完成一次
+> 真机互测；iOS arm64 已编译通过，但仍待真机互通验证。目前还没有 SDK 发布版、
+> 安全文件传输实现或四端验证。
 
 Halo 不是 AirDrop 的实现，也不会尝试逆向 Apple 的私有技术栈。近期目标更小，也
 更容易验证：当两台设备都打开 Halo，并处于彼此可达的同一局域网时，它们能够互相
@@ -352,11 +353,14 @@ flutter analyze apps/halo_demo
 flutter test apps/halo_demo
 ```
 
-Android 与 macOS 从 `apps/halo_demo` 启动同一个 Flutter 应用；原生 Launcher 不得演变成
-另一套产品 UI。两端真机互测步骤见
+Android、iOS 与 macOS 从 `apps/halo_demo` 启动同一个 Flutter 应用；原生 Launcher
+不得演变成另一套产品 UI。Android/macOS 真机互测步骤见
 [`docs/testing/android-macos-discovery.zh-CN.md`](docs/testing/android-macos-discovery.zh-CN.md)。
-当前 Android 与 macOS Demo 仅生成 arm64 产物；评估 Android 分发体积时应使用 Release
-APK，而不是包含 Flutter 调试运行时的 Debug APK。
+iOS 构建和真机步骤见
+[`docs/testing/ios-discovery.zh-CN.md`](docs/testing/ios-discovery.zh-CN.md)。当前 Android、
+iOS 与 macOS Demo 仅生成 arm64 产物；评估 Android 分发体积时应使用 Release APK，
+而不是包含 Flutter 调试运行时的 Debug APK。应用内“发现诊断”会展示 Rust 报告的各个
+Provider 独立状态。
 架构边界、安全规则、测试要求和变更流程请参阅 [`AGENTS.md`](AGENTS.md)。
 
 ## 许可证

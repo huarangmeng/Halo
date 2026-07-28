@@ -1,6 +1,6 @@
 # Halo 设备发现与链路探测设计
 
-- 状态：Android/macOS 前台发现实验实现，持续真机验证
+- 状态：Android/iOS/macOS 前台发现实验实现，持续真机验证
 - 版本：Draft 1
 - 日期：2026-07-28
 - 适用平台：Android、iOS、Windows、macOS
@@ -34,7 +34,7 @@ Halo 的发现能力不能等同于“调用一次 mDNS，然后把回调展示�
 ```mermaid
 flowchart TB
     subgraph Flutter["Flutter 应用层"]
-        UI["Android / macOS 共用 UI"]
+        UI["Android / iOS / macOS 共用 UI"]
         BRIDGE["生成式 Rust FFI + 原始平台事件转发"]
     end
 
@@ -626,16 +626,17 @@ stopped
 - 本机两个独立进程已经通过 mDNS、IPv4 和 IPv6 三源发现同一个 Presence，测得主动
   response RTT 并完成退出清理；这不代替跨设备验证；
 - iOS/macOS 共用的 CoreBluetooth scan、advertise、GATT read 和 Wake-LAN 系统驱动
-  已实现，并通过 Swift 编译测试，但尚未接入 Flutter 或进行真机互测；
-- Android BLE 系统驱动已经开始实现；先前的 Kotlin Presence codec 和原生 Android
-  Demo 因违反统一 Flutter + Rust 架构已删除；
+  已接入同一 Flutter UI；iOS arm64 iPhoneOS 构建已通过，但尚未进行 iOS 真机互测；
+- Android BLE 系统驱动已经接入同一 Flutter UI；Kotlin 只调用系统 API 并搬运 Rust
+  Presence 字节，不包含 Presence codec 或发现业务状态机；
 - `halo-ffi` 已接入 Rust DiscoveryManager，BLE 原始字节必须经过 Rust codec 和聚合器，
   相关跨边界自动测试已经通过；
-- Android/macOS 共用 Flutter Demo 和平台通道仍在实现中，尚不能声明端到端可用；
+- Android ↔ macOS 已在真机上完成双向发现验证；UI 可显示完整 Presence ID、设备类型、
+  聚合来源和 Rust 报告的各 Provider 运行状态；
 - Windows BLE 系统驱动尚未实现。
 
-因此当前状态是“实验性 Rust 发现核心 + Rust FFI 边界 + 两端原生驱动建设中”，不能
-称为 Android/macOS 已经完成互测，更不能称为四个平台已经支持发现。
+因此当前状态是“Android/macOS 真机发现已验证 + iOS arm64 构建已验证 + Windows
+待实现”。这仍不能称为三端或四端真机支持，也不代表发现到的设备已经通过身份认证。
 
 ## 20. 官方平台资料
 

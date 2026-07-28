@@ -7,9 +7,11 @@ Rust SDK. Its first reference application transfers files directly between
 Android, iOS, Windows, and macOS through a Flutter UI.
 
 > Project status: early implementation. The repository now contains one shared
-> Flutter discovery demo for Android and macOS, backed by the Rust discovery
-> core and narrow native BLE drivers. There is no SDK release, secure transfer
-> implementation, or four-platform real-device validation yet.
+> Flutter discovery demo for Android, iOS, and macOS, backed by the Rust
+> discovery core and narrow native BLE drivers. Android ↔ macOS has passed a
+> physical-device check; iOS currently has an arm64 build but still needs
+> physical-device interoperability testing. There is no SDK release, secure
+> transfer implementation, or four-platform validation yet.
 
 Halo is not an AirDrop implementation and does not attempt to reverse engineer
 Apple's private stack. The near-term promise is smaller and testable: when two
@@ -377,12 +379,16 @@ flutter analyze apps/halo_demo
 flutter test apps/halo_demo
 ```
 
-Run the Android/macOS discovery demo from `apps/halo_demo`; the native launchers
+Run the Android/iOS/macOS discovery demo from `apps/halo_demo`; the native launchers
 must not be developed as separate product UIs. The physical-device procedure is
 documented in
 [`docs/testing/android-macos-discovery.zh-CN.md`](docs/testing/android-macos-discovery.zh-CN.md).
-Current Android and macOS demo artifacts are arm64-only. Use a release APK, not
-the Flutter debug APK, when evaluating Android distribution size.
+The iOS build and device procedure is documented in
+[`docs/testing/ios-discovery.zh-CN.md`](docs/testing/ios-discovery.zh-CN.md).
+Current Android, iOS, and macOS demo artifacts are arm64-only. Use a release APK,
+not the Flutter debug APK, when evaluating Android distribution size. The
+in-app diagnostics sheet shows the independent provider states reported by
+Rust.
 See
 [`AGENTS.md`](AGENTS.md) for architecture boundaries, security rules, testing
 expectations, and the contribution workflow.

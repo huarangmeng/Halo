@@ -40,6 +40,15 @@ pub struct DiscoveryPeer {
     pub quarantined: bool,
 }
 
+/// Current health of one independently running discovery provider.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiscoveryProviderStatus {
+    pub name: String,
+    pub kind: String,
+    pub state: String,
+    pub detail: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiscoveryDeviceType {
     Unknown,
@@ -221,6 +230,23 @@ pub fn discovery_snapshot(session_id: u64) -> Result<Vec<DiscoveryPeer>, HaloApi
     with_session_mut(session_id, snapshot)
 }
 
+/// Returns a stable, sorted health snapshot for all providers seen by Rust.
+pub fn discovery_provider_statuses(
+    session_id: u64,
+) -> Result<Vec<DiscoveryProviderStatus>, HaloApiError> {
+    with_session_mut(session_id, |session| {
+        let mut statuses = session
+            .runtime
+            .block_on(session.handle.provider_states())
+            .map_err(core_error)?
+            .into_iter()
+            .map(|(provider, state)| provider_status(provider, state))
+            .collect::<Vec<_>>();
+        statuses.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(statuses)
+    })
+}
+
 pub fn discovery_stop(session_id: u64) -> Result<(), HaloApiError> {
     let mut session = sessions()
         .lock()
@@ -275,6 +301,52 @@ fn snapshot(session: &mut SessionRuntime) -> Result<Vec<DiscoveryPeer>, HaloApiE
             quarantined: peer.quarantined,
         })
         .collect())
+}
+
+fn provider_status(provider: ProviderId, state: ProviderState) -> DiscoveryProviderStatus {
+    let (state_name, detail) = match state {
+        ProviderState::Starting => ("starting", None),
+        ProviderState::Ready => ("ready", None),
+        ProviderState::Degraded(detail) => ("degraded", Some(detail)),
+        ProviderState::PermissionRequired(detail) => ("permission_required", Some(detail)),
+        ProviderState::PermissionDenied(detail) => ("permission_denied", Some(detail)),
+        ProviderState::HardwareOff => ("hardware_off", None),
+        ProviderState::Unsupported => ("unsupported", None),
+        ProviderState::TemporarilyUnavailable(detail) => ("temporarily_unavailable", Some(detail)),
+        ProviderState::Failed {
+            recoverable,
+            reason,
+        } => (
+            if recoverable {
+                "failed_recoverable"
+            } else {
+                "failed"
+            },
+            Some(reason),
+        ),
+        ProviderState::Stopped => ("stopped", None),
+        _ => ("unknown", None),
+    };
+    DiscoveryProviderStatus {
+        name: provider.name().to_owned(),
+        kind: provider_kind_name(provider.kind()).to_owned(),
+        state: state_name.to_owned(),
+        detail,
+    }
+}
+
+fn provider_kind_name(kind: &ProviderKind) -> &'static str {
+    match kind {
+        ProviderKind::Ble => "ble",
+        ProviderKind::Mdns => "mdns",
+        ProviderKind::PresenceV4 => "presence_v4",
+        ProviderKind::PresenceV6 => "presence_v6",
+        ProviderKind::Direct => "direct",
+        ProviderKind::WifiAware => "wifi_aware",
+        ProviderKind::WifiDirect => "wifi_direct",
+        ProviderKind::Custom => "custom",
+        _ => "unknown",
+    }
 }
 
 fn ble_provider_id(platform: &str) -> Result<ProviderId, HaloApiError> {
@@ -361,6 +433,28 @@ mod tests {
         let error = discovery_submit_ble(bootstrap.session_id, "macos".to_owned(), vec![0; 58])
             .expect_err("invalid descriptor must fail");
         assert!(matches!(error, HaloApiError::Core { .. }));
+        discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop failed: {error}"));
+    }
+
+    #[test]
+    fn provider_health_snapshot_includes_native_ble_and_is_sorted() {
+        let bootstrap = discovery_start(44_332, false, DiscoveryDeviceType::Ios)
+            .unwrap_or_else(|error| panic!("start failed: {error}"));
+        discovery_report_ble_state(
+            bootstrap.session_id,
+            "ios".to_owned(),
+            PlatformProviderState::PermissionDenied,
+            Some("denied by user".to_owned()),
+        )
+        .unwrap_or_else(|error| panic!("state failed: {error}"));
+
+        let statuses = discovery_provider_statuses(bootstrap.session_id)
+            .unwrap_or_else(|error| panic!("statuses failed: {error}"));
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].name, "ble-ios");
+        assert_eq!(statuses[0].kind, "ble");
+        assert_eq!(statuses[0].state, "permission_denied");
+        assert_eq!(statuses[0].detail.as_deref(), Some("denied by user"));
         discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop failed: {error}"));
     }
 }

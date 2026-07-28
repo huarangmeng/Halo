@@ -34,6 +34,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   DiscoveryPeer dco_decode_discovery_peer(dynamic raw);
 
   @protected
+  DiscoveryProviderStatus dco_decode_discovery_provider_status(dynamic raw);
+
+  @protected
   HaloApiError dco_decode_halo_api_error(dynamic raw);
 
   @protected
@@ -44,6 +47,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   List<DiscoveryPeer> dco_decode_list_discovery_peer(dynamic raw);
+
+  @protected
+  List<DiscoveryProviderStatus> dco_decode_list_discovery_provider_status(
+    dynamic raw,
+  );
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -92,6 +100,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   DiscoveryPeer sse_decode_discovery_peer(SseDeserializer deserializer);
 
   @protected
+  DiscoveryProviderStatus sse_decode_discovery_provider_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   HaloApiError sse_decode_halo_api_error(SseDeserializer deserializer);
 
   @protected
@@ -102,6 +115,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   List<DiscoveryPeer> sse_decode_list_discovery_peer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<DiscoveryProviderStatus> sse_decode_list_discovery_provider_status(
     SseDeserializer deserializer,
   );
 
@@ -156,6 +174,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   void sse_encode_discovery_peer(DiscoveryPeer self, SseSerializer serializer);
 
   @protected
+  void sse_encode_discovery_provider_status(
+    DiscoveryProviderStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_halo_api_error(HaloApiError self, SseSerializer serializer);
 
   @protected
@@ -167,6 +191,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   @protected
   void sse_encode_list_discovery_peer(
     List<DiscoveryPeer> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_discovery_provider_status(
+    List<DiscoveryProviderStatus> self,
     SseSerializer serializer,
   );
 

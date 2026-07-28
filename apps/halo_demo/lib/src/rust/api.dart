@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ble_provider_id`, `core_error`, `normalize_provider_state`, `sessions`, `snapshot`, `with_session_mut`
+// These functions are ignored because they are not marked as `pub`: `ble_provider_id`, `core_error`, `normalize_provider_state`, `provider_kind_name`, `provider_status`, `sessions`, `snapshot`, `with_session_mut`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SessionRuntime`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Starts the one Rust-owned discovery session used by the Flutter application.
 ///
@@ -58,6 +58,13 @@ Future<void> discoveryReportBleState({
 
 Future<List<DiscoveryPeer>> discoverySnapshot({required BigInt sessionId}) =>
     HaloRustLib.instance.api.crateApiDiscoverySnapshot(sessionId: sessionId);
+
+/// Returns a stable, sorted health snapshot for all providers seen by Rust.
+Future<List<DiscoveryProviderStatus>> discoveryProviderStatuses({
+  required BigInt sessionId,
+}) => HaloRustLib.instance.api.crateApiDiscoveryProviderStatuses(
+  sessionId: sessionId,
+);
 
 Future<void> discoveryStop({required BigInt sessionId}) =>
     HaloRustLib.instance.api.crateApiDiscoveryStop(sessionId: sessionId);
@@ -140,6 +147,35 @@ class DiscoveryPeer {
           bestEndpoint == other.bestEndpoint &&
           candidateCount == other.candidateCount &&
           quarantined == other.quarantined;
+}
+
+/// Current health of one independently running discovery provider.
+class DiscoveryProviderStatus {
+  final String name;
+  final String kind;
+  final String state;
+  final String? detail;
+
+  const DiscoveryProviderStatus({
+    required this.name,
+    required this.kind,
+    required this.state,
+    this.detail,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^ kind.hashCode ^ state.hashCode ^ detail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DiscoveryProviderStatus &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          kind == other.kind &&
+          state == other.state &&
+          detail == other.detail;
 }
 
 @freezed
