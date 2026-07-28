@@ -1,0 +1,10 @@
+/target/
+**/.gradle/
+**/.build/
+**/.dart_tool/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/local.properties
+**/*.rs.bk
+.DS_Store
