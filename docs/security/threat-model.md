@@ -21,8 +21,9 @@ confidentiality and integrity, and sensitive diagnostics.
 - Rust owns protocol parsing, transcript construction, state transitions, trust
   policy, and persistence decisions.
 - Rust owns identity-key creation, signing, verification, and the opaque
-  identity-blob format. Android Keystore and macOS Keychain adapters only
-  protect and persist opaque bytes.
+  identity-blob format. Android Keystore and Apple Data Protection Keychain
+  adapters only protect and persist opaque bytes. Remembered-peer public keys
+  and policy metadata remain in app-private files.
 - Flutter presents the code and captures consent; it cannot mark a peer trusted.
 
 ## Attacks and controls
@@ -39,6 +40,7 @@ confidentiality and integrity, and sensitive diagnostics.
 | Key extraction at rest | OS-backed protection for the Rust identity blob; no plaintext fallback; short-lived zeroized Rust buffers | Platform tests verify protected storage, backup exclusion, deletion, and persistence across restart |
 | Stale trust after reinstall or restore | New key is an identity change; no silent repair | Delete/replace local identity and verify peers show a blocking identity-change error |
 | Connection resource exhaustion | At most four active ceremonies, at most eight staggered candidates, 8-second connection attempts, 60-second consent, one control stream, 75-second idle timeout, explicit cancellation | Slow peer, cancellation, disconnect, and network-change tests release tasks and sockets |
+| Unexpected background radio use | Discovery continues off-screen only after the user explicitly starts it; Android shows an ongoing foreground-service notification and Stop tears down native and Rust sessions | Put each app in the background, verify disclosure and continuity, then press Stop and verify BLE, LAN sockets, and the Android service are gone |
 
 ## Security invariants
 
@@ -62,6 +64,9 @@ confidentiality and integrity, and sensitive diagnostics.
   availability differ by device and distribution mode.
 - Local denial of service, Wi-Fi roaming, captive portals, VPN routing, and
   aggressive mobile lifecycle suspension can still interrupt pairing.
+- Android foreground-service policy, vendor battery management, force-stop, and
+  process death can still end discovery. macOS sleep or application Quit ends
+  availability. iOS background continuity is not supported by this decision.
 - Address binding deliberately fails closed when a DHCP lease is reused by a
   different device. Moving a trusted peer to a new address still authenticates
   its stored key, but the current privacy-preserving discovery descriptor does

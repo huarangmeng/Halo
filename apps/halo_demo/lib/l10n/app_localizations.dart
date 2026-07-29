@@ -308,6 +308,90 @@ abstract class AppLocalizations {
   /// **'Reject'**
   String get pairingReject;
 
+  /// No description provided for @connectionFailureTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection timed out before the peer responded.'**
+  String get connectionFailureTimeout;
+
+  /// No description provided for @connectionFailureUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'The discovered address is not reachable on the current network.'**
+  String get connectionFailureUnreachable;
+
+  /// No description provided for @connectionFailureTls.
+  ///
+  /// In en, this message translates to:
+  /// **'The encrypted QUIC/TLS connection could not be established.'**
+  String get connectionFailureTls;
+
+  /// No description provided for @connectionFailureAuthentication.
+  ///
+  /// In en, this message translates to:
+  /// **'The peer identity or handshake signature could not be verified.'**
+  String get connectionFailureAuthentication;
+
+  /// No description provided for @connectionFailureProtocol.
+  ///
+  /// In en, this message translates to:
+  /// **'The peer sent an incompatible or malformed pairing message.'**
+  String get connectionFailureProtocol;
+
+  /// No description provided for @connectionFailureIdentityChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved device identity does not match the identity presented now.'**
+  String get connectionFailureIdentityChanged;
+
+  /// No description provided for @connectionFailureNetworkChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'The active network changed while connecting.'**
+  String get connectionFailureNetworkChanged;
+
+  /// No description provided for @connectionFailureCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'The connection attempt was cancelled.'**
+  String get connectionFailureCancelled;
+
+  /// No description provided for @connectionFailureConfiguration.
+  ///
+  /// In en, this message translates to:
+  /// **'No usable connection endpoint or transport configuration is available.'**
+  String get connectionFailureConfiguration;
+
+  /// No description provided for @connectionFailureControlIo.
+  ///
+  /// In en, this message translates to:
+  /// **'The authenticated control stream was interrupted.'**
+  String get connectionFailureControlIo;
+
+  /// No description provided for @connectionFailurePersistence.
+  ///
+  /// In en, this message translates to:
+  /// **'The trusted-device record could not be saved safely.'**
+  String get connectionFailurePersistence;
+
+  /// No description provided for @connectionFailureUserInterface.
+  ///
+  /// In en, this message translates to:
+  /// **'The pairing decision could not be completed by the app.'**
+  String get connectionFailureUserInterface;
+
+  /// No description provided for @connectionFailureInternal.
+  ///
+  /// In en, this message translates to:
+  /// **'An internal connection task failed.'**
+  String get connectionFailureInternal;
+
+  /// No description provided for @connectionFailureUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection failed: {reason}'**
+  String connectionFailureUnknown(String reason);
+
   /// No description provided for @emptyPeers.
   ///
   /// In en, this message translates to:
@@ -325,6 +409,168 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Live provider health reported by the Rust discovery core. This data is local and intended for troubleshooting.'**
   String get diagnosticsDescription;
+
+  /// No description provided for @diagnosticsCapabilities.
+  ///
+  /// In en, this message translates to:
+  /// **'Device capabilities'**
+  String get diagnosticsCapabilities;
+
+  /// No description provided for @diagnosticsNoCapabilities.
+  ///
+  /// In en, this message translates to:
+  /// **'Capability status is not available from this platform launcher.'**
+  String get diagnosticsNoCapabilities;
+
+  /// No description provided for @capabilityBluetooth.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth'**
+  String get capabilityBluetooth;
+
+  /// No description provided for @capabilityWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi'**
+  String get capabilityWifi;
+
+  /// No description provided for @capabilityLocalNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Local network'**
+  String get capabilityLocalNetwork;
+
+  /// No description provided for @capabilityBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'Background discovery'**
+  String get capabilityBackground;
+
+  /// No description provided for @capabilityBluetoothReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is on and BLE scanning/advertising are available.'**
+  String get capabilityBluetoothReady;
+
+  /// No description provided for @capabilityBluetoothOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth is turned off. Turn it on to discover over BLE.'**
+  String get capabilityBluetoothOff;
+
+  /// No description provided for @capabilityBluetoothPermissionRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth permission has not been granted.'**
+  String get capabilityBluetoothPermissionRequired;
+
+  /// No description provided for @capabilityBluetoothPermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth access was denied in system privacy settings.'**
+  String get capabilityBluetoothPermissionDenied;
+
+  /// No description provided for @capabilityBluetoothUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This device does not support the required BLE features.'**
+  String get capabilityBluetoothUnsupported;
+
+  /// No description provided for @capabilityBluetoothAdvertisingUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'BLE scanning is available, but this device cannot advertise.'**
+  String get capabilityBluetoothAdvertisingUnavailable;
+
+  /// No description provided for @capabilityBluetoothDegraded.
+  ///
+  /// In en, this message translates to:
+  /// **'A BLE scan, GATT, or advertising operation failed; see recent events.'**
+  String get capabilityBluetoothDegraded;
+
+  /// No description provided for @capabilityBluetoothResetting.
+  ///
+  /// In en, this message translates to:
+  /// **'The system Bluetooth stack is resetting.'**
+  String get capabilityBluetoothResetting;
+
+  /// No description provided for @capabilityBluetoothPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth power state will be checked when discovery starts.'**
+  String get capabilityBluetoothPending;
+
+  /// No description provided for @capabilityWifiConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected to Wi-Fi.'**
+  String get capabilityWifiConnected;
+
+  /// No description provided for @capabilityWifiOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi is turned off.'**
+  String get capabilityWifiOff;
+
+  /// No description provided for @capabilityWifiNotConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi is on but not connected to a network.'**
+  String get capabilityWifiNotConnected;
+
+  /// No description provided for @capabilityWifiUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi status is unavailable on this device.'**
+  String get capabilityWifiUnsupported;
+
+  /// No description provided for @capabilityLocalNetworkConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'A local-network route is available.'**
+  String get capabilityLocalNetworkConnected;
+
+  /// No description provided for @capabilityEthernetConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'A local-network route is available over Ethernet.'**
+  String get capabilityEthernetConnected;
+
+  /// No description provided for @capabilityNoLocalNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'No Wi-Fi or Ethernet local-network route is available; QUIC pairing cannot connect.'**
+  String get capabilityNoLocalNetwork;
+
+  /// No description provided for @capabilityLocalNetworkPermissionRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Local-network permission has not been granted.'**
+  String get capabilityLocalNetworkPermissionRequired;
+
+  /// No description provided for @capabilityBackgroundRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Android foreground service is keeping discovery active off-screen.'**
+  String get capabilityBackgroundRunning;
+
+  /// No description provided for @capabilityBackgroundStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Background discovery service is stopped.'**
+  String get capabilityBackgroundStopped;
+
+  /// No description provided for @capabilityBackgroundProcess.
+  ///
+  /// In en, this message translates to:
+  /// **'Discovery continues while the macOS application process is running.'**
+  String get capabilityBackgroundProcess;
+
+  /// No description provided for @capabilityForegroundOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'This platform only supports the current foreground discovery flow.'**
+  String get capabilityForegroundOnly;
 
   /// No description provided for @diagnosticsSessionState.
   ///
@@ -475,6 +721,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'BLE is {state}; LAN providers remain independent.'**
   String noticeBleUnavailable(String state);
+
+  /// No description provided for @noticeCapabilityHealthDegraded.
+  ///
+  /// In en, this message translates to:
+  /// **'Device capabilities need attention ({capabilities}); available discovery paths keep running.'**
+  String noticeCapabilityHealthDegraded(String capabilities);
 
   /// No description provided for @noticeProviderHealthDegraded.
   ///

@@ -29,6 +29,7 @@ enum DiscoveryNotice {
   startFailed,
   cleanupFailed,
   bleUnavailable,
+  capabilityHealthDegraded,
   providerHealthDegraded,
   diagnostic,
   rustRejected,
@@ -41,6 +42,18 @@ class DiscoveryDiagnosticEntry {
   });
 
   final String operation;
+  final String detail;
+}
+
+class PlatformCapabilityStatus {
+  const PlatformCapabilityStatus({
+    required this.name,
+    required this.state,
+    required this.detail,
+  });
+
+  final String name;
+  final String state;
   final String detail;
 }
 
@@ -59,6 +72,7 @@ class DiscoveryController extends ChangeNotifier {
   String? localPresenceId;
   DiscoveryDeviceType? localDeviceType;
   List<DiscoveryPeer> peers = const [];
+  List<PlatformCapabilityStatus> platformCapabilities = const [];
   List<DiscoveryProviderStatus> providerStatuses = const [];
   List<DiscoveryDiagnosticEntry> diagnostics = const [];
   List<PairingEvent> pairingActivity = const [];
@@ -102,6 +116,28 @@ class DiscoveryController extends ChangeNotifier {
     });
   }
 
+  Future<void> refreshPlatformCapabilities({bool notify = true}) async {
+    try {
+      final raw = await _methods.invokeMethod<Object?>('capabilities');
+      if (raw is! List<Object?>) return;
+      platformCapabilities = raw
+          .whereType<Map<Object?, Object?>>()
+          .map(
+            (entry) => PlatformCapabilityStatus(
+              name: entry['name'] as String? ?? 'unknown',
+              state: entry['state'] as String? ?? 'degraded',
+              detail: entry['detail'] as String? ?? 'unknown',
+            ),
+          )
+          .toList(growable: false);
+      if (notify) notifyListeners();
+    } on MissingPluginException {
+      // Widget tests and unsupported launchers have no platform capability bridge.
+    } catch (_) {
+      // Capability polling must never stop healthy discovery providers.
+    }
+  }
+
   Future<void> _start() async {
     peers = const [];
     providerStatuses = const [];
@@ -115,6 +151,20 @@ class DiscoveryController extends ChangeNotifier {
 
     try {
       final preparation = await _methods.invokeMethod<Object?>('prepare');
+      if (preparation is Map<Object?, Object?> &&
+          preparation['capabilities'] is List<Object?>) {
+        final rawCapabilities = preparation['capabilities']! as List<Object?>;
+        platformCapabilities = rawCapabilities
+            .whereType<Map<Object?, Object?>>()
+            .map(
+              (entry) => PlatformCapabilityStatus(
+                name: entry['name'] as String? ?? 'unknown',
+                state: entry['state'] as String? ?? 'degraded',
+                detail: entry['detail'] as String? ?? 'unknown',
+              ),
+            )
+            .toList(growable: false);
+      }
       final prepared = switch (preparation) {
         final bool value => value,
         final Map<Object?, Object?> value => value['ready'] == true,
@@ -281,10 +331,19 @@ class DiscoveryController extends ChangeNotifier {
         notifyListeners();
       } else if (type == 'state') {
         final rawState = rawEvent['state'] as String? ?? 'degraded';
+        final detail = rawEvent['detail'] as String?;
         await discoveryReportBleState(
           sessionId: sessionId,
           platform: platform,
           state: _providerState(rawState),
+          detail: detail,
+        );
+        _upsertCapability(
+          PlatformCapabilityStatus(
+            name: 'bluetooth',
+            state: rawState,
+            detail: detail ?? 'bluetooth_$rawState',
+          ),
         );
         if (rawState == 'ready') {
           state = DiscoveryRunState.running;
@@ -327,6 +386,7 @@ class DiscoveryController extends ChangeNotifier {
     if (sessionId == null || _refreshing) return;
     _refreshing = true;
     try {
+      await refreshPlatformCapabilities(notify: false);
       peers = await discoverySnapshot(sessionId: sessionId);
       providerStatuses = await discoveryProviderStatuses(sessionId: sessionId);
       final pairingSessionId = _pairingSessionId;
@@ -454,26 +514,52 @@ class DiscoveryController extends ChangeNotifier {
 
   void _applyProviderHealth() {
     if (!isRunning) return;
-    final unhealthy = providerStatuses
+    final unhealthyProviders = providerStatuses
         .where(
           (provider) =>
               provider.state != 'ready' && provider.state != 'starting',
         )
-        .map((provider) => provider.name)
+        .map((provider) => '${provider.name}:${provider.state}')
         .toList(growable: false);
-    if (unhealthy.isNotEmpty) {
+    final unhealthyCapabilities = platformCapabilities
+        .where(
+          (capability) =>
+              (capability.name == 'bluetooth' ||
+                  capability.name == 'local_network') &&
+              capability.state != 'ready' &&
+              capability.state != 'starting',
+        )
+        .map((capability) => '${capability.name}:${capability.detail}')
+        .toList(growable: false);
+    if (unhealthyProviders.isNotEmpty) {
       state = DiscoveryRunState.degraded;
       if (notice == DiscoveryNotice.running ||
           notice == DiscoveryNotice.starting) {
         _setNotice(
           DiscoveryNotice.providerHealthDegraded,
-          detail: unhealthy.join(', '),
+          detail: unhealthyProviders.join(', '),
+        );
+      }
+    } else if (unhealthyCapabilities.isNotEmpty) {
+      state = DiscoveryRunState.degraded;
+      if (notice == DiscoveryNotice.running ||
+          notice == DiscoveryNotice.starting) {
+        _setNotice(
+          DiscoveryNotice.capabilityHealthDegraded,
+          detail: unhealthyCapabilities.join(', '),
         );
       }
     } else if (providerStatuses.any((provider) => provider.state == 'ready')) {
       state = DiscoveryRunState.running;
       _setNotice(DiscoveryNotice.running);
     }
+  }
+
+  void _upsertCapability(PlatformCapabilityStatus capability) {
+    platformCapabilities = [
+      capability,
+      ...platformCapabilities.where((entry) => entry.name != capability.name),
+    ];
   }
 
   String _safeError(Object error) {

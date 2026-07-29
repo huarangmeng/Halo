@@ -5,6 +5,10 @@ devices. A successful build or host loopback test is not cross-device evidence.
 
 ## Preconditions
 
+- Copy `apps/halo_demo/macos/Runner/Configs/Signing.local.xcconfig.example`
+  to `Signing.local.xcconfig`, set `HALO_DEVELOPMENT_TEAM` to the Apple Team
+  selected in Xcode, and build the macOS app through the `Runner` scheme. The
+  local file is ignored so a personal Team ID is never committed.
 - Both devices run the same revision and are on a mutually reachable LAN.
 - Halo is open in the foreground on both devices.
 - Discovery shows a LAN endpoint for the other device.
@@ -25,7 +29,9 @@ devices. A successful build or host loopback test is not cross-device evidence.
 
 Android stores only an AES-GCM-wrapped opaque Rust identity blob in
 `noBackupFilesDir`; the wrapping key is non-exportable from Android Keystore.
-Apple platforms store the same opaque blob as a device-only Keychain item.
+Apple platforms store the same opaque blob as a device-only, non-synchronizing
+Data Protection Keychain item. Normal use must not request the user's login
+keychain password.
 Rust owns the identity format, signatures, trust records, and atomic trust-file
 writes.
 
@@ -45,10 +51,12 @@ writes.
 
 For a development-only Android identity replacement, remove
 `no_backup/halo-identity-v1.bin` with `adb shell run-as` while the app is stopped.
-For a development-only macOS replacement, delete the Keychain item whose
-service is `org.halo.identity` and account is `device-identity-v1`. These are
-destructive test operations; preserve the opposite device's trust data and do
-not perform them on a profile whose identity must be retained.
+For a development-only macOS replacement, delete the app's Data Protection
+Keychain item whose service is `org.halo.identity` and account is
+`device-identity-v1` through the debug identity-reset operation. Do not use the
+`security` command-line tool as a substitute: it targets file-based keychains.
+These are destructive test operations; preserve the opposite device's trust
+data and do not perform them on a profile whose identity must be retained.
 
 ## Pass criteria
 

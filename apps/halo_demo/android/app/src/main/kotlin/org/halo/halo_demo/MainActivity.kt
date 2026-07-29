@@ -1,7 +1,13 @@
 package org.halo.halo_demo
 
+import android.Manifest
+import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Build
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
@@ -70,6 +76,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "prepare" -> preparePermissions(result)
+            "capabilities" -> result.success(capabilityPayload())
             "start" -> startBle(call, result)
             "updatePresence" -> updatePresence(call, result)
             "stop" -> stopBle(result)
@@ -154,6 +161,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
                             HaloWakeLanStatus.NO_LAN_PROVIDER
                         },
                     ).also { it.start() }
+                    HaloDiscoveryForegroundService.start(applicationContext)
                     providerTransition = false
                     result.success(null)
                 }
@@ -172,12 +180,14 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         val oldProvider = provider
         provider = null
         if (oldProvider == null) {
+            HaloDiscoveryForegroundService.stop(applicationContext)
             providerTransition = false
             result.success(null)
             return
         }
         oldProvider.shutdown {
             runOnUiThread {
+                HaloDiscoveryForegroundService.stop(applicationContext)
                 providerTransition = false
                 result.success(null)
             }
@@ -198,7 +208,8 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         val payload = when (event) {
             is HaloBleEvent.StateChanged -> mapOf(
                 "type" to "state",
-                "state" to event.state.name.lowercase(),
+                "state" to providerStateName(event.state),
+                "detail" to providerStateDetail(event.state),
             )
             is HaloBleEvent.Presence -> mapOf(
                 "type" to "presence",
@@ -216,6 +227,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
 
     private fun requiredPermissions(): List<String> = buildList {
         addAll(HaloBleProvider.REQUIRED_PERMISSIONS)
+        if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         if (Build.VERSION.SDK_INT >= 37) add(ACCESS_LOCAL_NETWORK_PERMISSION)
     }
 
@@ -225,8 +237,121 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         } else {
             "ready"
         }
-        return mapOf("ready" to (reason == "ready"), "reason" to reason)
+        return mapOf(
+            "ready" to (reason == "ready"),
+            "reason" to reason,
+            "capabilities" to capabilityPayload(),
+        )
     }
+
+    private fun capabilityPayload(): List<Map<String, String>> = listOf(
+        bluetoothCapability(),
+        wifiCapability(),
+        localNetworkCapability(),
+        capability(
+            "background",
+            if (HaloDiscoveryForegroundService.running) "ready" else "stopped",
+            if (HaloDiscoveryForegroundService.running) {
+                "foreground_service_running"
+            } else {
+                "foreground_service_stopped"
+            },
+        ),
+    )
+
+    private fun bluetoothCapability(): Map<String, String> {
+        val missing = HaloBleProvider.REQUIRED_PERMISSIONS.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            return capability(
+                "bluetooth",
+                "permission_required",
+                "bluetooth_permission_missing",
+            )
+        }
+        val manager = getSystemService(BluetoothManager::class.java)
+        val adapter = manager?.adapter
+        if (adapter == null || !packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            return capability("bluetooth", "unsupported", "ble_unsupported")
+        }
+        if (!adapter.isEnabled) {
+            return capability("bluetooth", "hardware_off", "bluetooth_powered_off")
+        }
+        if (adapter.bluetoothLeAdvertiser == null) {
+            return capability("bluetooth", "degraded", "ble_advertising_unavailable")
+        }
+        return capability("bluetooth", "ready", "bluetooth_ready")
+    }
+
+    private fun wifiCapability(): Map<String, String> {
+        return try {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                ?: return capability("wifi", "unsupported", "wifi_unsupported")
+            if (!wifi.isWifiEnabled) {
+                return capability("wifi", "hardware_off", "wifi_powered_off")
+            }
+            val connectivity = getSystemService(ConnectivityManager::class.java)
+            val capabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
+            if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
+                capability("wifi", "ready", "wifi_connected")
+            } else {
+                capability("wifi", "temporarily_unavailable", "wifi_not_connected")
+            }
+        } catch (_: SecurityException) {
+            capability("wifi", "permission_required", "wifi_state_permission_missing")
+        } catch (_: RuntimeException) {
+            capability("wifi", "temporarily_unavailable", "wifi_state_unavailable")
+        }
+    }
+
+    private fun localNetworkCapability(): Map<String, String> {
+        if (Build.VERSION.SDK_INT >= 37 &&
+            checkSelfPermission(ACCESS_LOCAL_NETWORK_PERMISSION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return capability("local_network", "permission_required", "local_network_permission_missing")
+        }
+        return try {
+            val connectivity = getSystemService(ConnectivityManager::class.java)
+            val networkCapabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
+            val hasLanTransport = networkCapabilities?.let {
+                it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            } == true
+            if (hasLanTransport) {
+                capability("local_network", "ready", "local_network_connected")
+            } else {
+                capability("local_network", "temporarily_unavailable", "no_local_network_route")
+            }
+        } catch (_: SecurityException) {
+            capability("local_network", "permission_required", "network_state_permission_missing")
+        } catch (_: RuntimeException) {
+            capability("local_network", "temporarily_unavailable", "network_state_unavailable")
+        }
+    }
+
+    private fun capability(name: String, state: String, detail: String): Map<String, String> =
+        mapOf("name" to name, "state" to state, "detail" to detail)
+
+    private fun providerStateName(state: org.halo.discovery.android.HaloBleState): String =
+        when (state) {
+            org.halo.discovery.android.HaloBleState.BLUETOOTH_OFF -> "hardware_off"
+            org.halo.discovery.android.HaloBleState.PERMISSION_REQUIRED -> "permission_required"
+            org.halo.discovery.android.HaloBleState.UNSUPPORTED -> "unsupported"
+            else -> state.name.lowercase()
+        }
+
+    private fun providerStateDetail(state: org.halo.discovery.android.HaloBleState): String =
+        when (state) {
+            org.halo.discovery.android.HaloBleState.BLUETOOTH_OFF -> "bluetooth_powered_off"
+            org.halo.discovery.android.HaloBleState.PERMISSION_REQUIRED ->
+                "bluetooth_permission_missing"
+            org.halo.discovery.android.HaloBleState.UNSUPPORTED -> "ble_unsupported"
+            org.halo.discovery.android.HaloBleState.DEGRADED -> "ble_operation_degraded"
+            org.halo.discovery.android.HaloBleState.STARTING -> "ble_starting"
+            org.halo.discovery.android.HaloBleState.READY -> "ble_ready"
+            org.halo.discovery.android.HaloBleState.STOPPED -> "ble_stopped"
+        }
 
     private fun isLocationServiceEnabled(): Boolean =
         getSystemService(LocationManager::class.java)?.isLocationEnabled == true

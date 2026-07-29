@@ -118,6 +118,50 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingReject => '拒绝';
 
   @override
+  String get connectionFailureTimeout => '连接超时，对端未在限定时间内响应。';
+
+  @override
+  String get connectionFailureUnreachable => '当前网络无法访问发现到的设备地址。';
+
+  @override
+  String get connectionFailureTls => '无法建立加密的 QUIC/TLS 连接。';
+
+  @override
+  String get connectionFailureAuthentication => '无法验证对端身份或握手签名。';
+
+  @override
+  String get connectionFailureProtocol => '对端发送了不兼容或畸形的配对消息。';
+
+  @override
+  String get connectionFailureIdentityChanged => '已保存的设备身份与本次提供的身份不一致。';
+
+  @override
+  String get connectionFailureNetworkChanged => '连接期间当前网络发生了变化。';
+
+  @override
+  String get connectionFailureCancelled => '连接尝试已取消。';
+
+  @override
+  String get connectionFailureConfiguration => '没有可用的连接端点或传输配置。';
+
+  @override
+  String get connectionFailureControlIo => '已认证控制流意外中断。';
+
+  @override
+  String get connectionFailurePersistence => '无法安全保存可信设备记录。';
+
+  @override
+  String get connectionFailureUserInterface => '应用未能完成本次配对确认。';
+
+  @override
+  String get connectionFailureInternal => '内部连接任务失败。';
+
+  @override
+  String connectionFailureUnknown(String reason) {
+    return '连接失败：$reason';
+  }
+
+  @override
   String get emptyPeers => '请让两台设备上的 Halo 都保持前台打开。\n开始后，BLE 与局域网发现会并行运行。';
 
   @override
@@ -126,6 +170,87 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get diagnosticsDescription =>
       '这里展示 Rust 发现核心报告的实时 Provider 状态，仅保留在本机，用于排查问题。';
+
+  @override
+  String get diagnosticsCapabilities => '设备能力';
+
+  @override
+  String get diagnosticsNoCapabilities => '当前平台启动器没有提供能力状态。';
+
+  @override
+  String get capabilityBluetooth => '蓝牙';
+
+  @override
+  String get capabilityWifi => 'Wi-Fi';
+
+  @override
+  String get capabilityLocalNetwork => '局域网';
+
+  @override
+  String get capabilityBackground => '后台发现';
+
+  @override
+  String get capabilityBluetoothReady => '蓝牙已开启，BLE 扫描和广播可用。';
+
+  @override
+  String get capabilityBluetoothOff => '蓝牙已关闭；开启后才能通过 BLE 发现设备。';
+
+  @override
+  String get capabilityBluetoothPermissionRequired => '尚未授予蓝牙权限。';
+
+  @override
+  String get capabilityBluetoothPermissionDenied => '系统隐私设置已拒绝蓝牙访问。';
+
+  @override
+  String get capabilityBluetoothUnsupported => '本设备不支持所需的 BLE 能力。';
+
+  @override
+  String get capabilityBluetoothAdvertisingUnavailable => 'BLE 扫描可用，但本设备无法广播。';
+
+  @override
+  String get capabilityBluetoothDegraded => 'BLE 扫描、GATT 或广播操作失败，请查看最近事件。';
+
+  @override
+  String get capabilityBluetoothResetting => '系统蓝牙协议栈正在重置。';
+
+  @override
+  String get capabilityBluetoothPending => '开始发现时会检查蓝牙开关状态。';
+
+  @override
+  String get capabilityWifiConnected => '已连接 Wi-Fi。';
+
+  @override
+  String get capabilityWifiOff => 'Wi-Fi 已关闭。';
+
+  @override
+  String get capabilityWifiNotConnected => 'Wi-Fi 已开启，但尚未接入网络。';
+
+  @override
+  String get capabilityWifiUnsupported => '本设备无法提供 Wi-Fi 状态。';
+
+  @override
+  String get capabilityLocalNetworkConnected => '当前有可用的局域网路由。';
+
+  @override
+  String get capabilityEthernetConnected => '当前通过以太网连接局域网。';
+
+  @override
+  String get capabilityNoLocalNetwork => '当前没有 Wi-Fi 或以太网局域网路由，无法建立 QUIC 配对连接。';
+
+  @override
+  String get capabilityLocalNetworkPermissionRequired => '尚未授予本地网络权限。';
+
+  @override
+  String get capabilityBackgroundRunning => 'Android 前台服务正在让发现功能持续后台运行。';
+
+  @override
+  String get capabilityBackgroundStopped => '后台发现服务尚未运行。';
+
+  @override
+  String get capabilityBackgroundProcess => '只要 macOS 应用进程仍在运行，发现就会继续。';
+
+  @override
+  String get capabilityForegroundOnly => '当前平台只支持前台发现流程。';
 
   @override
   String get diagnosticsSessionState => '会话状态';
@@ -215,6 +340,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String noticeBleUnavailable(String state) {
     return 'BLE 当前$state；局域网 Provider 仍会独立运行。';
+  }
+
+  @override
+  String noticeCapabilityHealthDegraded(String capabilities) {
+    return '设备能力需要处理（$capabilities）；可用的发现路径仍会继续运行。';
   }
 
   @override

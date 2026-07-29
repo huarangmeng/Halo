@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import 'discovery_controller.dart';
@@ -21,29 +19,18 @@ class HaloApp extends StatefulWidget {
   State<HaloApp> createState() => _HaloAppState();
 }
 
-class _HaloAppState extends State<HaloApp> with WidgetsBindingObserver {
+class _HaloAppState extends State<HaloApp> {
   late final DiscoveryController controller;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     controller = DiscoveryController();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if ((state == AppLifecycleState.paused ||
-            state == AppLifecycleState.hidden ||
-            state == AppLifecycleState.detached) &&
-        controller.hasActiveWork) {
-      unawaited(controller.stop());
-    }
+    controller.refreshPlatformCapabilities();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     controller.dispose();
     super.dispose();
   }
@@ -291,6 +278,33 @@ class _DiagnosticsSheet extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
+              l10n.diagnosticsCapabilities,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (controller.platformCapabilities.isEmpty)
+              Text(l10n.diagnosticsNoCapabilities)
+            else
+              ...controller.platformCapabilities.map(
+                (capability) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    capability.state == 'ready'
+                        ? Icons.check_circle_outline
+                        : Icons.warning_amber_outlined,
+                    color: capability.state == 'ready'
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.error,
+                  ),
+                  title: Text(_capabilityNameLabel(l10n, capability.name)),
+                  subtitle: Text(
+                    '${_providerStateLabel(l10n, capability.state)} · '
+                    '${_capabilityDetailLabel(l10n, capability.detail)}',
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            Text(
               l10n.diagnosticsProviders,
               style: Theme.of(context).textTheme.titleMedium,
             ),
@@ -505,6 +519,13 @@ class _PairingSummary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(_pairingStatusLabel(l10n, event)),
+          if (event.detail case final detail?) ...[
+            const SizedBox(height: 6),
+            Text(
+              _pairingDetailLabel(l10n, detail),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
           if (code != null) ...[
             const SizedBox(height: 8),
             Text(l10n.pairingCodeLabel),
@@ -698,6 +719,8 @@ String _noticeText(AppLocalizations l10n, DiscoveryController controller) {
     DiscoveryNotice.bleUnavailable => l10n.noticeBleUnavailable(
       _providerStateLabel(l10n, detail),
     ),
+    DiscoveryNotice.capabilityHealthDegraded =>
+      l10n.noticeCapabilityHealthDegraded(detail),
     DiscoveryNotice.providerHealthDegraded => l10n.noticeProviderHealthDegraded(
       detail,
     ),
@@ -731,3 +754,68 @@ String _providerKindLabel(AppLocalizations l10n, String kind) => switch (kind) {
   'presence_v6' => l10n.providerPresenceV6,
   _ => kind,
 };
+
+String _capabilityNameLabel(AppLocalizations l10n, String name) =>
+    switch (name) {
+      'bluetooth' => l10n.capabilityBluetooth,
+      'wifi' => l10n.capabilityWifi,
+      'local_network' => l10n.capabilityLocalNetwork,
+      'background' => l10n.capabilityBackground,
+      _ => name,
+    };
+
+String _capabilityDetailLabel(AppLocalizations l10n, String detail) =>
+    switch (detail) {
+      'bluetooth_ready' || 'ble_ready' => l10n.capabilityBluetoothReady,
+      'bluetooth_powered_off' => l10n.capabilityBluetoothOff,
+      'bluetooth_permission_missing' || 'bluetooth_permission_not_requested' =>
+        l10n.capabilityBluetoothPermissionRequired,
+      'bluetooth_permission_denied' => l10n.capabilityBluetoothPermissionDenied,
+      'ble_unsupported' => l10n.capabilityBluetoothUnsupported,
+      'ble_advertising_unavailable' =>
+        l10n.capabilityBluetoothAdvertisingUnavailable,
+      'ble_operation_degraded' => l10n.capabilityBluetoothDegraded,
+      'bluetooth_resetting' => l10n.capabilityBluetoothResetting,
+      'bluetooth_state_checked_when_discovery_starts' =>
+        l10n.capabilityBluetoothPending,
+      'wifi_connected' => l10n.capabilityWifiConnected,
+      'wifi_powered_off' => l10n.capabilityWifiOff,
+      'wifi_not_connected' => l10n.capabilityWifiNotConnected,
+      'wifi_unsupported' => l10n.capabilityWifiUnsupported,
+      'wifi_state_permission_missing' ||
+      'wifi_state_unavailable' => l10n.capabilityWifiUnsupported,
+      'local_network_connected' => l10n.capabilityLocalNetworkConnected,
+      'ethernet_connected' => l10n.capabilityEthernetConnected,
+      'no_local_network_route' => l10n.capabilityNoLocalNetwork,
+      'local_network_permission_missing' =>
+        l10n.capabilityLocalNetworkPermissionRequired,
+      'network_state_permission_missing' =>
+        l10n.capabilityLocalNetworkPermissionRequired,
+      'network_state_unavailable' => l10n.capabilityNoLocalNetwork,
+      'foreground_service_running' => l10n.capabilityBackgroundRunning,
+      'foreground_service_stopped' => l10n.capabilityBackgroundStopped,
+      'application_process_background' => l10n.capabilityBackgroundProcess,
+      'foreground_only' => l10n.capabilityForegroundOnly,
+      _ => detail,
+    };
+
+String _pairingDetailLabel(AppLocalizations l10n, String detail) =>
+    switch (detail) {
+      'connect_timeout' => l10n.connectionFailureTimeout,
+      'connect_unreachable' => l10n.connectionFailureUnreachable,
+      'connect_tls' => l10n.connectionFailureTls,
+      'connect_authentication' ||
+      'authentication' => l10n.connectionFailureAuthentication,
+      'connect_protocol' || 'protocol' => l10n.connectionFailureProtocol,
+      'connect_identity_changed' ||
+      'identity_changed' => l10n.connectionFailureIdentityChanged,
+      'connect_network_changed' => l10n.connectionFailureNetworkChanged,
+      'connect_cancelled' || 'cancelled' => l10n.connectionFailureCancelled,
+      'connect_configuration' ||
+      'configuration' => l10n.connectionFailureConfiguration,
+      'control_io' => l10n.connectionFailureControlIo,
+      'persistence' => l10n.connectionFailurePersistence,
+      'user_interface' => l10n.connectionFailureUserInterface,
+      'connect_internal' => l10n.connectionFailureInternal,
+      _ => l10n.connectionFailureUnknown(detail),
+    };

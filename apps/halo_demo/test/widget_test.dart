@@ -73,6 +73,18 @@ void main() {
 
   testWidgets('renders iOS and Rust provider diagnostics', (tester) async {
     final controller = DiscoveryController(platformOverride: 'ios')
+      ..platformCapabilities = const [
+        PlatformCapabilityStatus(
+          name: 'bluetooth',
+          state: 'hardware_off',
+          detail: 'bluetooth_powered_off',
+        ),
+        PlatformCapabilityStatus(
+          name: 'local_network',
+          state: 'temporarily_unavailable',
+          detail: 'no_local_network_route',
+        ),
+      ]
       ..providerStatuses = const [
         DiscoveryProviderStatus(
           name: 'ble-ios',
@@ -103,9 +115,23 @@ void main() {
     await tester.tap(find.byTooltip('Discovery diagnostics'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Bluetooth'), findsOneWidget);
+    expect(find.textContaining('Bluetooth is turned off'), findsOneWidget);
+    expect(find.text('Local network'), findsOneWidget);
+    expect(find.textContaining('QUIC pairing cannot connect'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('mdns'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('ble-ios'), findsOneWidget);
     expect(find.text('mdns'), findsOneWidget);
     expect(find.textContaining('permission denied'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('advertising failed'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('advertising failed'), findsOneWidget);
   });
 
@@ -139,5 +165,51 @@ void main() {
     expect(find.textContaining('12:34:56:78:9A:BC'), findsOneWidget);
     expect(find.text('Codes match — accept'), findsOneWidget);
     expect(find.text('Reject'), findsOneWidget);
+  });
+
+  testWidgets('shows the actionable authenticated connection failure reason', (
+    tester,
+  ) async {
+    const peerId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    final controller = DiscoveryController(platformOverride: 'android')
+      ..peers = [
+        DiscoveryPeer(
+          presenceId: peerId,
+          deviceType: DiscoveryDeviceType.macos,
+          compatible: true,
+          capabilities: BigInt.zero,
+          sources: const ['ble-android'],
+          candidateEndpoints: const ['192.0.2.1:4433'],
+          candidateCount: 1,
+          quarantined: false,
+        ),
+      ]
+      ..pairingActivity = [
+        PairingEvent(
+          eventId: BigInt.one,
+          kind: PairingEventKind.failed,
+          peerPresenceId: peerId,
+          alreadyTrusted: false,
+          detail: 'connect_unreachable',
+        ),
+      ];
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: HaloDiscoveryPage(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Secure pairing failed'), findsOneWidget);
+    expect(
+      find.text(
+        'The discovered address is not reachable on the current network.',
+      ),
+      findsOneWidget,
+    );
   });
 }

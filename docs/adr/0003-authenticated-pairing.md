@@ -43,8 +43,10 @@ blob:
 
 - Android: a non-exportable Android Keystore AES key wraps the Rust identity
   blob, which is stored in application-private storage and excluded from backup.
-- iOS and macOS: an application-private Keychain generic-password item stores
-  the Rust identity blob with a device-only accessibility class.
+- iOS and macOS: an application-private Data Protection Keychain item stores
+  the Rust identity blob with a device-only accessibility class. It is not
+  synchronizable and the app never queries the legacy login keychain, so normal
+  identity access does not ask for a login-keychain password.
 
 Platform code does not parse the blob, choose algorithms, sign protocol data,
 derive peer identity, or decide trust. If protected storage is unavailable,

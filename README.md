@@ -97,7 +97,7 @@ protocol to connect safely. A fast demo app alone is not enough.
 
 - AirDrop or Quick Share wire compatibility
 - System share-sheet integration before the core flow is stable
-- Guaranteed discovery or transfer while either app is backgrounded
+- Identical or guaranteed background discovery on every platform
 - Internet rendezvous, NAT traversal, cloud relay, or user accounts
 - Folder synchronization, clipboard sync, screen casting, keyboard/mouse sharing,
   or camera streaming
@@ -105,6 +105,12 @@ protocol to connect safely. A fast demo app alone is not enough.
 
 Those exclusions are sequencing decisions, not claims that every item is
 possible on every platform.
+
+The experimental Android demo keeps an explicitly started discovery session
+alive with a visible foreground-service notification. The macOS demo continues
+while its application process is running. This is not a guarantee across
+force-stop, process exit, sleep, permission revocation, vendor battery policy,
+or iOS background limits.
 
 ## Platform expectations
 

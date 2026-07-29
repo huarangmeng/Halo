@@ -1,5 +1,6 @@
 import CoreBluetooth
 import Foundation
+import Network
 import Security
 
 #if os(macOS)
@@ -19,6 +20,13 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   private var eventSink: FlutterEventSink?
   private var provider: HaloBleProvider?
   private var providerGeneration: UInt64 = 0
+  private let pathMonitor = NWPathMonitor()
+  private let pathMonitorQueue = DispatchQueue(label: "org.halo.network-status")
+  private var lastBleStateName: String?
+  private var wifiState = "temporarily_unavailable"
+  private var wifiDetail = "wifi_not_connected"
+  private var localNetworkState = "temporarily_unavailable"
+  private var localNetworkDetail = "no_local_network_route"
 
   init(messenger: FlutterBinaryMessenger) {
     methodChannel = FlutterMethodChannel(
@@ -34,6 +42,12 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       binaryMessenger: messenger
     )
     super.init()
+    pathMonitor.pathUpdateHandler = { [weak self] path in
+      DispatchQueue.main.async {
+        self?.updateNetworkState(path)
+      }
+    }
+    pathMonitor.start(queue: pathMonitorQueue)
     methodChannel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
     }
@@ -44,6 +58,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   }
 
   deinit {
+    pathMonitor.cancel()
     providerGeneration &+= 1
     provider?.stopAndWait()
   }
@@ -72,6 +87,8 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       @unknown default:
         result(["ready": false, "reason": "permission_denied"])
       }
+    case "capabilities":
+      result(capabilityPayload())
     case "start":
       guard let presence = presenceArgument(call) else {
         result(FlutterError(
@@ -175,6 +192,12 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       default:
         result(FlutterMethodNotImplemented)
       }
+    } catch let HaloIdentityStorageError.failed(status) {
+      result(FlutterError(
+        code: "identity-storage",
+        message: "Protected identity storage failed (OSStatus \(status))",
+        details: ["osStatus": status]
+      ))
     } catch {
       result(FlutterError(
         code: "identity-storage",
@@ -189,6 +212,11 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       kSecClass: kSecClassGenericPassword,
       kSecAttrService: "org.halo.identity",
       kSecAttrAccount: "device-identity-v1",
+      // Keep the identity in the app-scoped modern keychain. In particular,
+      // never query the legacy login keychain, which can prompt for its
+      // password, and never opt the identity into synchronization.
+      kSecUseDataProtectionKeychain: true,
+      kSecAttrSynchronizable: false,
     ]
   }
 
@@ -201,7 +229,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     if status == errSecItemNotFound { return nil }
     guard status == errSecSuccess, let data = item as? Data,
           !data.isEmpty, data.count <= 256 else {
-      throw HaloIdentityStorageError.failed
+      throw HaloIdentityStorageError.failed(status)
     }
     return data
   }
@@ -217,19 +245,20 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     )
     if updateStatus == errSecSuccess { return }
     guard updateStatus == errSecItemNotFound else {
-      throw HaloIdentityStorageError.failed
+      throw HaloIdentityStorageError.failed(updateStatus)
     }
     var item = identityQuery()
     attributes.forEach { item[$0.key] = $0.value }
-    guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
-      throw HaloIdentityStorageError.failed
+    let addStatus = SecItemAdd(item as CFDictionary, nil)
+    guard addStatus == errSecSuccess else {
+      throw HaloIdentityStorageError.failed(addStatus)
     }
   }
 
   private func deleteIdentity() throws {
     let status = SecItemDelete(identityQuery() as CFDictionary)
     guard status == errSecSuccess || status == errSecItemNotFound else {
-      throw HaloIdentityStorageError.failed
+      throw HaloIdentityStorageError.failed(status)
     }
   }
 
@@ -238,7 +267,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       for: .applicationSupportDirectory,
       in: .userDomainMask
     ).first else {
-      throw HaloIdentityStorageError.failed
+      throw HaloIdentityStorageError.failed(errSecNotAvailable)
     }
     return applicationSupport
       .appendingPathComponent(Bundle.main.bundleIdentifier ?? "org.halo", isDirectory: true)
@@ -249,7 +278,11 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     let payload: [String: Any]
     switch event {
     case .state(let state):
-      payload = ["type": "state", "state": stateName(state)]
+      payload = [
+        "type": "state",
+        "state": stateName(state),
+        "detail": stateDetail(state),
+      ]
     case .presence(_, let descriptor, let rssi):
       payload = [
         "type": "presence",
@@ -265,6 +298,9 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     }
     DispatchQueue.main.async { [weak self] in
       guard let self, generation == providerGeneration else { return }
+      if case .state(let state) = event {
+        lastBleStateName = stateName(state)
+      }
       eventSink?(payload)
     }
   }
@@ -280,8 +316,97 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     case .stopped: "stopped"
     }
   }
+
+  private func stateDetail(_ state: HaloBleState) -> String {
+    switch state {
+    case .starting: "ble_starting"
+    case .ready: "ble_ready"
+    case .poweredOff: "bluetooth_powered_off"
+    case .unauthorized: "bluetooth_permission_denied"
+    case .unsupported: "ble_unsupported"
+    case .resetting: "bluetooth_resetting"
+    case .stopped: "ble_stopped"
+    }
+  }
+
+  private func capabilityPayload() -> [[String: String]] {
+    let bluetooth: [String: String]
+    if let state = lastBleStateName {
+      bluetooth = capability(
+        "bluetooth",
+        state,
+        state == "hardware_off" ? "bluetooth_powered_off" : "bluetooth_\(state)"
+      )
+    } else {
+      switch CBManager.authorization {
+      case .denied, .restricted:
+        bluetooth = capability(
+          "bluetooth",
+          "permission_denied",
+          "bluetooth_permission_denied"
+        )
+      case .notDetermined:
+        bluetooth = capability(
+          "bluetooth",
+          "permission_required",
+          "bluetooth_permission_not_requested"
+        )
+      case .allowedAlways:
+        bluetooth = capability(
+          "bluetooth",
+          "starting",
+          "bluetooth_state_checked_when_discovery_starts"
+        )
+      @unknown default:
+        bluetooth = capability("bluetooth", "unsupported", "ble_unsupported")
+      }
+    }
+
+    #if os(macOS)
+    let background = capability("background", "ready", "application_process_background")
+    #else
+    let background = capability("background", "unsupported", "foreground_only")
+    #endif
+
+    return [
+      bluetooth,
+      capability("wifi", wifiState, wifiDetail),
+      capability("local_network", localNetworkState, localNetworkDetail),
+      background,
+    ]
+  }
+
+  private func updateNetworkState(_ path: NWPath) {
+    guard path.status == .satisfied else {
+      wifiState = "temporarily_unavailable"
+      wifiDetail = "wifi_not_connected"
+      localNetworkState = "temporarily_unavailable"
+      localNetworkDetail = "no_local_network_route"
+      return
+    }
+    if path.usesInterfaceType(.wifi) {
+      wifiState = "ready"
+      wifiDetail = "wifi_connected"
+      localNetworkState = "ready"
+      localNetworkDetail = "local_network_connected"
+    } else if path.usesInterfaceType(.wiredEthernet) {
+      wifiState = "temporarily_unavailable"
+      wifiDetail = "wifi_not_connected"
+      localNetworkState = "ready"
+      localNetworkDetail = "ethernet_connected"
+    } else {
+      wifiState = "temporarily_unavailable"
+      wifiDetail = "wifi_not_connected"
+      localNetworkState = "temporarily_unavailable"
+      localNetworkDetail = "no_local_network_route"
+    }
+  }
+
+  private func capability(_ name: String, _ state: String, _ detail: String) -> [String: String] {
+    ["name": name, "state": state, "detail": detail]
+  }
 }
 
 private enum HaloIdentityStorageError: Error {
-  case failed
+  case failed(OSStatus)
 }

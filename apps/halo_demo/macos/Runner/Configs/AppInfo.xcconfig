@@ -4,6 +4,13 @@
 // future. If not, the values below would default to using the project name when this becomes a
 // 'flutter create' template.
 
+// Keep the developer-specific Apple Team ID outside version control. Copy
+// Signing.local.xcconfig.example to Signing.local.xcconfig before a signed
+// macOS build that uses the Data Protection Keychain.
+#include? "Signing.local.xcconfig"
+DEVELOPMENT_TEAM = $(HALO_DEVELOPMENT_TEAM)
+CODE_SIGN_IDENTITY[sdk=macosx*] = $(HALO_CODE_SIGN_IDENTITY)
+
 // The application's name. By default this is also the title of the Flutter window.
 PRODUCT_NAME = halo_demo
 
