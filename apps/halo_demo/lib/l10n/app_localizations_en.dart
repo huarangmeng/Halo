@@ -79,6 +79,46 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bleAwaitingLan => 'BLE rendezvous; awaiting LAN endpoint';
 
   @override
+  String get connectSecurely => 'Connect securely';
+
+  @override
+  String get pairingIncomingTitle => 'Pairing request';
+
+  @override
+  String get pairingCodeLabel => 'Verify this code on both devices';
+
+  @override
+  String get pairingFingerprintLabel => 'Device key';
+
+  @override
+  String get pairingConnecting => 'Establishing an authenticated connection…';
+
+  @override
+  String get pairingTrusted => 'Trusted device';
+
+  @override
+  String get pairingTrustedRecognized => 'Previously trusted device recognized';
+
+  @override
+  String get pairingRejected => 'Pairing was rejected';
+
+  @override
+  String get pairingIdentityChanged =>
+      'Blocked: this device\'s identity changed';
+
+  @override
+  String get pairingTimedOut => 'Pairing timed out';
+
+  @override
+  String get pairingFailed => 'Secure pairing failed';
+
+  @override
+  String get pairingAccept => 'Codes match — accept';
+
+  @override
+  String get pairingReject => 'Reject';
+
+  @override
   String get emptyPeers =>
       'Keep Halo open in the foreground on both devices.\nBLE and LAN discovery run in parallel after you start.';
 

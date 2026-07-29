@@ -10,8 +10,13 @@ Android, iOS, Windows, and macOS through a Flutter UI.
 > Flutter discovery demo for Android, iOS, and macOS, backed by the Rust
 > discovery core and narrow native BLE drivers. Android ↔ macOS has passed a
 > physical-device check; iOS currently has an arm64 build but still needs
-> physical-device interoperability testing. There is no SDK release, secure
-> transfer implementation, or four-platform validation yet.
+> physical-device interoperability testing. The Rust core now has an
+> experimental TLS-bound pairing protocol, QUIC listener/client, protected
+> identity adapters, remembered-peer persistence, and a Flutter consent flow.
+> The integrated flow passes host loopback and Android/macOS compile checks, but
+> has not yet been verified between physical Android and macOS devices. There is
+> no SDK release, secure file-transfer implementation, or four-platform
+> validation.
 
 Halo is not an AirDrop implementation and does not attempt to reverse engineer
 Apple's private stack. The near-term promise is smaller and testable: when two
@@ -143,6 +148,40 @@ flowchart TB
     Transfer --> Protocol
 ```
 
+### Public SDK boundary
+
+Rust applications depend only on `halo-core`. It owns discovery and pairing
+services and exposes product-level configuration, events, consent, and shutdown
+operations. `halo-protocol`, `halo-crypto`, `halo-discovery`, and
+`halo-transport` are workspace implementation crates; they are not separate SDK
+integration requirements and are currently marked `publish = false`.
+
+During repository development, a Rust client uses one dependency:
+
+```toml
+[dependencies]
+halo-core = { path = "path/to/Halo/crates/halo-core" }
+```
+
+```rust,no_run
+use halo_core::{PairingConfig, PairingService};
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let startup = PairingService::start(PairingConfig::new("/app/private/halo-trust")).await?;
+let advertised_port = startup.listen_port;
+// Persist startup.new_identity_blob() with the platform protected-blob adapter
+// before advertising advertised_port.
+# let _ = advertised_port;
+# Ok(())
+# }
+```
+
+Flutter consumes one generated plugin API, Android packaging will expose one
+AAR, and Apple packaging will expose one XCFramework. Those artifacts embed the
+internal Rust crates; application developers do not select or coordinate them.
+`halo-ffi` is intentionally a thin conversion and handle layer over
+`halo-core`.
+
 ### Control plane
 
 The control plane handles:
@@ -249,7 +288,7 @@ Opaque IDs cross the FFI boundary. Rust retains ownership of sockets, keys,
 tasks, transfer state, and error classification. Dart receives immutable view
 models and invokes coarse commands.
 
-## Proposed repository layout
+## Repository layout
 
 ```text
 Halo/
@@ -272,11 +311,11 @@ Halo/
 └── tools/
 ```
 
-Likely implementation choices—not yet adopted dependencies—include Tokio for
-async execution, Quinn for QUIC, rustls for TLS, BLAKE3 for content digests, and
-`flutter_rust_bridge` for generated Dart/Rust bindings. Each material dependency
-must be validated on all four targets and recorded in an ADR before becoming an
-architectural commitment.
+The experimental discovery and pairing core uses Tokio for async execution,
+Quinn for QUIC, rustls for TLS, P-256 and HKDF-SHA-256 for pairing, and
+`flutter_rust_bridge` for generated Dart/Rust bindings. BLAKE3 remains a
+candidate for future content digests. Dependencies are not considered
+cross-platform validated until the relevant physical-device matrix passes.
 
 ## Delivery plan
 

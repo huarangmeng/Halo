@@ -19,11 +19,15 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     private var permissionResult: MethodChannel.Result? = null
     private var providerTransition = false
     private var providerGeneration = 0L
+    private lateinit var identityStore: HaloIdentityStore
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        identityStore = HaloIdentityStore(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler(::handleMethodCall)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, IDENTITY_CHANNEL)
+            .setMethodCallHandler(::handleIdentityCall)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(this)
     }
@@ -70,6 +74,33 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             "updatePresence" -> updatePresence(call, result)
             "stop" -> stopBle(result)
             else -> result.notImplemented()
+        }
+    }
+
+    private fun handleIdentityCall(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            when (call.method) {
+                "load" -> result.success(identityStore.load())
+                "save" -> {
+                    val blob = call.argument<ByteArray>("blob")
+                    if (blob == null) {
+                        result.error("invalid-identity", "Rust identity blob is missing", null)
+                    } else {
+                        identityStore.save(blob)
+                        result.success(null)
+                    }
+                }
+                "delete" -> {
+                    identityStore.delete()
+                    result.success(null)
+                }
+                "trustStoreDirectory" -> result.success(identityStore.trustStoreDirectory)
+                else -> result.notImplemented()
+            }
+        } catch (error: IdentityStorageException) {
+            result.error("identity-storage", error.message, null)
+        } catch (_: Exception) {
+            result.error("identity-storage", "Protected identity storage failed", null)
         }
     }
 
@@ -203,6 +234,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     companion object {
         private const val METHOD_CHANNEL = "org.halo.discovery/ble"
         private const val EVENT_CHANNEL = "org.halo.discovery/ble-events"
+        private const val IDENTITY_CHANNEL = "org.halo.identity/storage"
         private const val PERMISSION_REQUEST = 7101
         private const val ACCESS_LOCAL_NETWORK_PERMISSION =
             "android.permission.ACCESS_LOCAL_NETWORK"

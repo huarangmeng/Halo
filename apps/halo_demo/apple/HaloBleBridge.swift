@@ -1,5 +1,6 @@
 import CoreBluetooth
 import Foundation
+import Security
 
 #if os(macOS)
 import FlutterMacOS
@@ -13,6 +14,7 @@ import Flutter
 /// bytes. Rust remains the sole parser and discovery state owner.
 final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   private let methodChannel: FlutterMethodChannel
+  private let identityChannel: FlutterMethodChannel
   private let eventChannel: FlutterEventChannel
   private var eventSink: FlutterEventSink?
   private var provider: HaloBleProvider?
@@ -23,6 +25,10 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       name: "org.halo.discovery/ble",
       binaryMessenger: messenger
     )
+    identityChannel = FlutterMethodChannel(
+      name: "org.halo.identity/storage",
+      binaryMessenger: messenger
+    )
     eventChannel = FlutterEventChannel(
       name: "org.halo.discovery/ble-events",
       binaryMessenger: messenger
@@ -30,6 +36,9 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     super.init()
     methodChannel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
+    }
+    identityChannel.setMethodCallHandler { [weak self] call, result in
+      self?.handleIdentity(call, result: result)
     }
     eventChannel.setStreamHandler(self)
   }
@@ -133,6 +142,109 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     return typedData.data
   }
 
+  private func handleIdentity(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    do {
+      switch call.method {
+      case "load":
+        if let data = try loadIdentity() {
+          result(FlutterStandardTypedData(bytes: data))
+        } else {
+          result(nil)
+        }
+      case "save":
+        guard
+          let arguments = call.arguments as? [String: Any],
+          let typedData = arguments["blob"] as? FlutterStandardTypedData,
+          !typedData.data.isEmpty,
+          typedData.data.count <= 256
+        else {
+          result(FlutterError(
+            code: "invalid-identity",
+            message: "Rust identity blob length is invalid",
+            details: nil
+          ))
+          return
+        }
+        try saveIdentity(typedData.data)
+        result(nil)
+      case "delete":
+        try deleteIdentity()
+        result(nil)
+      case "trustStoreDirectory":
+        result(try trustStoreDirectory().path)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    } catch {
+      result(FlutterError(
+        code: "identity-storage",
+        message: "Protected identity storage failed",
+        details: nil
+      ))
+    }
+  }
+
+  private func identityQuery() -> [CFString: Any] {
+    [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: "org.halo.identity",
+      kSecAttrAccount: "device-identity-v1",
+    ]
+  }
+
+  private func loadIdentity() throws -> Data? {
+    var query = identityQuery()
+    query[kSecReturnData] = true
+    query[kSecMatchLimit] = kSecMatchLimitOne
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    if status == errSecItemNotFound { return nil }
+    guard status == errSecSuccess, let data = item as? Data,
+          !data.isEmpty, data.count <= 256 else {
+      throw HaloIdentityStorageError.failed
+    }
+    return data
+  }
+
+  private func saveIdentity(_ data: Data) throws {
+    let attributes: [CFString: Any] = [
+      kSecValueData: data,
+      kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+    ]
+    let updateStatus = SecItemUpdate(
+      identityQuery() as CFDictionary,
+      attributes as CFDictionary
+    )
+    if updateStatus == errSecSuccess { return }
+    guard updateStatus == errSecItemNotFound else {
+      throw HaloIdentityStorageError.failed
+    }
+    var item = identityQuery()
+    attributes.forEach { item[$0.key] = $0.value }
+    guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+      throw HaloIdentityStorageError.failed
+    }
+  }
+
+  private func deleteIdentity() throws {
+    let status = SecItemDelete(identityQuery() as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw HaloIdentityStorageError.failed
+    }
+  }
+
+  private func trustStoreDirectory() throws -> URL {
+    guard let applicationSupport = FileManager.default.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first else {
+      throw HaloIdentityStorageError.failed
+    }
+    return applicationSupport
+      .appendingPathComponent(Bundle.main.bundleIdentifier ?? "org.halo", isDirectory: true)
+      .appendingPathComponent("halo-trust-v1", isDirectory: true)
+  }
+
   private func emit(_ event: HaloBleEvent, generation: UInt64) {
     let payload: [String: Any]
     switch event {
@@ -168,4 +280,8 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     case .stopped: "stopped"
     }
   }
+}
+
+private enum HaloIdentityStorageError: Error {
+  case failed
 }

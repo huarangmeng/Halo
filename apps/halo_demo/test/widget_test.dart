@@ -4,6 +4,7 @@ import 'package:halo_demo/discovery_controller.dart';
 import 'package:halo_demo/l10n/app_localizations.dart';
 import 'package:halo_demo/main.dart';
 import 'package:halo_demo/src/rust/api.dart';
+import 'package:halo_demo/src/rust/api/pairing_api.dart';
 
 void main() {
   testWidgets('renders the shared discovery screen in English', (tester) async {
@@ -42,6 +43,7 @@ void main() {
           compatible: true,
           capabilities: BigInt.zero,
           sources: ['ble-macos'],
+          candidateEndpoints: const [],
           candidateCount: 0,
           quarantined: false,
         ),
@@ -105,5 +107,37 @@ void main() {
     expect(find.text('mdns'), findsOneWidget);
     expect(find.textContaining('permission denied'), findsOneWidget);
     expect(find.text('advertising failed'), findsOneWidget);
+  });
+
+  testWidgets('shows an incoming authenticated pairing decision', (
+    tester,
+  ) async {
+    final controller = DiscoveryController(platformOverride: 'macos')
+      ..pairingActivity = [
+        PairingEvent(
+          eventId: BigInt.one,
+          requestId: BigInt.from(7),
+          kind: PairingEventKind.confirmationRequired,
+          peerFingerprint: '12:34:56:78:9A:BC',
+          shortCode: '042731',
+          alreadyTrusted: false,
+        ),
+      ];
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: HaloDiscoveryPage(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pairing request'), findsOneWidget);
+    expect(find.text('042731'), findsOneWidget);
+    expect(find.textContaining('12:34:56:78:9A:BC'), findsOneWidget);
+    expect(find.text('Codes match — accept'), findsOneWidget);
+    expect(find.text('Reject'), findsOneWidget);
   });
 }

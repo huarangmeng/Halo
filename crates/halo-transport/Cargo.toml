@@ -1,0 +1,22 @@
+[package]
+name = "halo-transport"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Bounded QUIC connection orchestration for Halo"
+
+[dependencies]
+async-trait.workspace = true
+halo-crypto = { path = "../halo-crypto" }
+halo-protocol = { path = "../halo-protocol" }
+quinn.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[lints.rust]
+unsafe_code = "deny"

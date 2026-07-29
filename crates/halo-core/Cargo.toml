@@ -1,0 +1,21 @@
+[package]
+name = "halo-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Public Rust SDK facade and workflow orchestration for Halo"
+
+[dependencies]
+async-trait.workspace = true
+halo-crypto = { path = "../halo-crypto" }
+halo-discovery = { path = "../halo-discovery" }
+halo-protocol = { path = "../halo-protocol" }
+halo-transport = { path = "../halo-transport" }
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[lints.rust]
+unsafe_code = "deny"

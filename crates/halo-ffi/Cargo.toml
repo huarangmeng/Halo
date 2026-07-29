@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish = false
 description = "Generated-binding surface for the Halo Flutter application"
 
 [lib]
@@ -11,7 +12,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 flutter_rust_bridge.workspace = true
-halo-discovery = { path = "../halo-discovery" }
+halo-core = { path = "../halo-core" }
 thiserror.workspace = true
 tokio.workspace = true
 

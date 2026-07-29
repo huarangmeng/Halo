@@ -230,6 +230,84 @@ abstract class AppLocalizations {
   /// **'BLE rendezvous; awaiting LAN endpoint'**
   String get bleAwaitingLan;
 
+  /// No description provided for @connectSecurely.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect securely'**
+  String get connectSecurely;
+
+  /// No description provided for @pairingIncomingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing request'**
+  String get pairingIncomingTitle;
+
+  /// No description provided for @pairingCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify this code on both devices'**
+  String get pairingCodeLabel;
+
+  /// No description provided for @pairingFingerprintLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Device key'**
+  String get pairingFingerprintLabel;
+
+  /// No description provided for @pairingConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Establishing an authenticated connection…'**
+  String get pairingConnecting;
+
+  /// No description provided for @pairingTrusted.
+  ///
+  /// In en, this message translates to:
+  /// **'Trusted device'**
+  String get pairingTrusted;
+
+  /// No description provided for @pairingTrustedRecognized.
+  ///
+  /// In en, this message translates to:
+  /// **'Previously trusted device recognized'**
+  String get pairingTrustedRecognized;
+
+  /// No description provided for @pairingRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing was rejected'**
+  String get pairingRejected;
+
+  /// No description provided for @pairingIdentityChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Blocked: this device\'s identity changed'**
+  String get pairingIdentityChanged;
+
+  /// No description provided for @pairingTimedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing timed out'**
+  String get pairingTimedOut;
+
+  /// No description provided for @pairingFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure pairing failed'**
+  String get pairingFailed;
+
+  /// No description provided for @pairingAccept.
+  ///
+  /// In en, this message translates to:
+  /// **'Codes match — accept'**
+  String get pairingAccept;
+
+  /// No description provided for @pairingReject.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject'**
+  String get pairingReject;
+
   /// No description provided for @emptyPeers.
   ///
   /// In en, this message translates to:

@@ -79,6 +79,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bleAwaitingLan => '已通过 BLE 会合，正在等待局域网端点';
 
   @override
+  String get connectSecurely => '安全连接';
+
+  @override
+  String get pairingIncomingTitle => '配对请求';
+
+  @override
+  String get pairingCodeLabel => '请确认两台设备显示相同短码';
+
+  @override
+  String get pairingFingerprintLabel => '设备密钥';
+
+  @override
+  String get pairingConnecting => '正在建立已认证连接…';
+
+  @override
+  String get pairingTrusted => '已信任设备';
+
+  @override
+  String get pairingTrustedRecognized => '已识别此前信任的设备';
+
+  @override
+  String get pairingRejected => '配对已被拒绝';
+
+  @override
+  String get pairingIdentityChanged => '已阻止：该设备的身份发生变化';
+
+  @override
+  String get pairingTimedOut => '配对已超时';
+
+  @override
+  String get pairingFailed => '安全配对失败';
+
+  @override
+  String get pairingAccept => '短码一致，接受';
+
+  @override
+  String get pairingReject => '拒绝';
+
+  @override
   String get emptyPeers => '请让两台设备上的 Halo 都保持前台打开。\n开始后，BLE 与局域网发现会并行运行。';
 
   @override

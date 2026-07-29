@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'src/rust/api.dart';
+import 'src/rust/api/pairing_api.dart';
 
 enum DiscoveryRunState {
   stopped,
@@ -46,6 +47,7 @@ class DiscoveryDiagnosticEntry {
 class DiscoveryController extends ChangeNotifier {
   static const _methods = MethodChannel('org.halo.discovery/ble');
   static const _events = EventChannel('org.halo.discovery/ble-events');
+  static const _identityMethods = MethodChannel('org.halo.identity/storage');
 
   DiscoveryController({String? platformOverride})
     : platform = platformOverride ?? _detectedPlatform();
@@ -59,22 +61,27 @@ class DiscoveryController extends ChangeNotifier {
   List<DiscoveryPeer> peers = const [];
   List<DiscoveryProviderStatus> providerStatuses = const [];
   List<DiscoveryDiagnosticEntry> diagnostics = const [];
+  List<PairingEvent> pairingActivity = const [];
 
   final String platform;
 
   BigInt? _sessionId;
+  BigInt? _pairingSessionId;
+  BigInt _lastPairingEventId = BigInt.zero;
   StreamSubscription<Object?>? _nativeEvents;
   Timer? _snapshotTimer;
   Future<void>? _startOperation;
   Future<void>? _stopOperation;
   bool _stopRequested = false;
   bool _refreshing = false;
+  final Set<BigInt> _respondedPairingRequests = <BigInt>{};
 
   bool get canStart =>
       _startOperation == null &&
       _stopOperation == null &&
       (state == DiscoveryRunState.stopped || state == DiscoveryRunState.failed);
   bool get canStop => _sessionId != null;
+  bool get canPair => _pairingSessionId != null;
   bool get hasActiveWork =>
       state != DiscoveryRunState.stopped || _startOperation != null;
   bool get isRunning =>
@@ -99,6 +106,9 @@ class DiscoveryController extends ChangeNotifier {
     peers = const [];
     providerStatuses = const [];
     diagnostics = const [];
+    pairingActivity = const [];
+    _lastPairingEventId = BigInt.zero;
+    _respondedPairingRequests.clear();
     state = DiscoveryRunState.preparing;
     _setNotice(DiscoveryNotice.permissionContext);
     notifyListeners();
@@ -149,8 +159,28 @@ class DiscoveryController extends ChangeNotifier {
           notifyListeners();
         },
       );
+      final identityBlob = await _identityMethods.invokeMethod<Uint8List>(
+        'load',
+      );
+      final trustStoreDirectory = await _identityMethods.invokeMethod<String>(
+        'trustStoreDirectory',
+      );
+      if (trustStoreDirectory == null || trustStoreDirectory.isEmpty) {
+        throw StateError('Platform trust storage directory is unavailable');
+      }
+      final pairingBootstrap = await pairingStart(
+        identityBlob: identityBlob,
+        trustStoreDirectory: trustStoreDirectory,
+      );
+      _pairingSessionId = pairingBootstrap.sessionId;
+      final newIdentityBlob = pairingBootstrap.identityBlobToPersist;
+      if (newIdentityBlob != null) {
+        await _identityMethods.invokeMethod<void>('save', <String, Object>{
+          'blob': newIdentityBlob,
+        });
+      }
       final bootstrap = await discoveryStart(
-        quicPort: 4433,
+        quicPort: pairingBootstrap.listenPort,
         enableLan: true,
         deviceType: platformDeviceType,
       );
@@ -204,7 +234,9 @@ class DiscoveryController extends ChangeNotifier {
   Future<void> _stopAfterStart() async {
     await _startOperation;
     final sessionId = _sessionId;
+    final pairingSessionId = _pairingSessionId;
     _sessionId = null;
+    _pairingSessionId = null;
     _snapshotTimer?.cancel();
     _snapshotTimer = null;
     await _nativeEvents?.cancel();
@@ -212,6 +244,9 @@ class DiscoveryController extends ChangeNotifier {
     try {
       await _methods.invokeMethod<void>('stop');
       if (sessionId != null) await discoveryStop(sessionId: sessionId);
+      if (pairingSessionId != null) {
+        await pairingStop(sessionId: pairingSessionId);
+      }
     } catch (error) {
       state = DiscoveryRunState.failed;
       _setNotice(DiscoveryNotice.cleanupFailed, detail: _safeError(error));
@@ -221,6 +256,8 @@ class DiscoveryController extends ChangeNotifier {
     peers = const [];
     providerStatuses = const [];
     diagnostics = const [];
+    pairingActivity = const [];
+    _respondedPairingRequests.clear();
     localPresenceId = null;
     localDeviceType = null;
     state = DiscoveryRunState.stopped;
@@ -292,6 +329,21 @@ class DiscoveryController extends ChangeNotifier {
     try {
       peers = await discoverySnapshot(sessionId: sessionId);
       providerStatuses = await discoveryProviderStatuses(sessionId: sessionId);
+      final pairingSessionId = _pairingSessionId;
+      if (pairingSessionId != null) {
+        final events = await pairingEvents(
+          sessionId: pairingSessionId,
+          afterEventId: _lastPairingEventId,
+        );
+        if (events.isNotEmpty) {
+          _lastPairingEventId = events.last.eventId;
+          pairingActivity = [...pairingActivity, ...events].reversed
+              .take(32)
+              .toList(growable: false)
+              .reversed
+              .toList(growable: false);
+        }
+      }
       _applyProviderHealth();
       notifyListeners();
     } catch (_) {
@@ -307,17 +359,86 @@ class DiscoveryController extends ChangeNotifier {
     await _nativeEvents?.cancel();
     _nativeEvents = null;
     final sessionId = _sessionId;
+    final pairingSessionId = _pairingSessionId;
     _sessionId = null;
+    _pairingSessionId = null;
     localPresenceId = null;
     localDeviceType = null;
     providerStatuses = const [];
     try {
       await _methods.invokeMethod<void>('stop');
       if (sessionId != null) await discoveryStop(sessionId: sessionId);
+      if (pairingSessionId != null) {
+        await pairingStop(sessionId: pairingSessionId);
+      }
     } catch (_) {
       // Preserve the original start failure.
     }
   }
+
+  PairingEvent? pairingEventFor(DiscoveryPeer peer) {
+    for (final event in pairingActivity.reversed) {
+      if (event.peerPresenceId == peer.presenceId) return event;
+    }
+    return null;
+  }
+
+  PairingEvent? get incomingPairingEvent {
+    for (final event in pairingActivity.reversed) {
+      if (event.peerPresenceId == null &&
+          (event.kind == PairingEventKind.confirmationRequired ||
+              event.kind == PairingEventKind.trusted ||
+              event.kind == PairingEventKind.failed ||
+              event.kind == PairingEventKind.identityChanged)) {
+        return event;
+      }
+    }
+    return null;
+  }
+
+  Future<void> connectToPeer(DiscoveryPeer peer) async {
+    final sessionId = _pairingSessionId;
+    if (sessionId == null || !peer.compatible) return;
+    final endpoints = <String>{
+      ...peer.candidateEndpoints,
+      ?peer.bestEndpoint,
+    }.toList(growable: false);
+    if (endpoints.isEmpty) return;
+    try {
+      await pairingConnect(
+        sessionId: sessionId,
+        peerPresenceId: peer.presenceId,
+        endpoints: endpoints,
+      );
+      await _refreshSnapshot();
+    } catch (error) {
+      state = DiscoveryRunState.degraded;
+      _setNotice(DiscoveryNotice.rustRejected, detail: _safeError(error));
+      notifyListeners();
+    }
+  }
+
+  Future<void> respondToPairing(BigInt requestId, bool accepted) async {
+    final sessionId = _pairingSessionId;
+    if (sessionId == null || !_respondedPairingRequests.add(requestId)) return;
+    notifyListeners();
+    try {
+      await pairingRespond(
+        sessionId: sessionId,
+        requestId: requestId,
+        accepted: accepted,
+      );
+      await _refreshSnapshot();
+    } catch (error) {
+      _respondedPairingRequests.remove(requestId);
+      state = DiscoveryRunState.degraded;
+      _setNotice(DiscoveryNotice.rustRejected, detail: _safeError(error));
+      notifyListeners();
+    }
+  }
+
+  bool canRespondToPairing(BigInt requestId) =>
+      !_respondedPairingRequests.contains(requestId);
 
   PlatformProviderState _providerState(String value) => switch (value) {
     'starting' => PlatformProviderState.starting,
@@ -370,17 +491,27 @@ class DiscoveryController extends ChangeNotifier {
   void dispose() {
     _stopRequested = true;
     final sessionId = _sessionId;
+    final pairingSessionId = _pairingSessionId;
     _sessionId = null;
+    _pairingSessionId = null;
     _snapshotTimer?.cancel();
     _nativeEvents?.cancel();
-    if (sessionId != null) unawaited(_disposeNative(sessionId));
+    if (sessionId != null || pairingSessionId != null) {
+      unawaited(_disposeNative(sessionId, pairingSessionId));
+    }
     super.dispose();
   }
 
-  Future<void> _disposeNative(BigInt sessionId) async {
+  Future<void> _disposeNative(
+    BigInt? sessionId,
+    BigInt? pairingSessionId,
+  ) async {
     try {
       await _methods.invokeMethod<void>('stop');
-      await discoveryStop(sessionId: sessionId);
+      if (sessionId != null) await discoveryStop(sessionId: sessionId);
+      if (pairingSessionId != null) {
+        await pairingStop(sessionId: pairingSessionId);
+      }
     } catch (_) {
       // Application teardown cannot surface an actionable error.
     }

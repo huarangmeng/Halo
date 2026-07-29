@@ -8,7 +8,8 @@ Rust discovery core。BLE 原生代码只负责调用系统蓝牙 API 和搬运�
 
 - 已实现：Flutter UI、Rust FFI、BLE 扫描/广播/GATT、mDNS、IPv4/IPv6 Presence 与
   IPv4 定向广播并行探测。
-- 未实现：经过认证的 QUIC 连接、配对和文件传输。
+- 已接入但待真机验证：经过认证的 QUIC 连接、短码配对、可信设备持久化。
+- 未实现：文件传输。
 - 模拟器不能作为 BLE 互通证据；此流程需要一台支持 BLE 的 Android 真机。
 - 当前代码只承诺应用前台运行，不承诺后台发现。
 
@@ -73,7 +74,8 @@ Android 17 还会请求本地网络访问。macOS 首次使用时需要批准蓝
 4. 关闭其中一端或点击停止后，另一端的记录会在 Rust TTL 到期后消失。
 5. 关闭蓝牙后 LAN 探测仍继续；断开局域网后 BLE 仍独立工作并报告状态。
 
-这只是发现互通标准，不代表身份可信、QUIC 可连接或文件传输已经完成。
+这部分只定义发现互通标准；配对真机标准见
+[`android-macos-pairing.md`](android-macos-pairing.md)，文件传输尚未实现。
 
 ## 常见问题
 

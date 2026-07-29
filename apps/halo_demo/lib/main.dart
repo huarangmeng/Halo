@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'discovery_controller.dart';
 import 'l10n/app_localizations.dart';
 import 'src/rust/api.dart';
+import 'src/rust/api/pairing_api.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -144,17 +145,41 @@ class HaloDiscoveryPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Expanded(
-                      child: controller.peers.isEmpty
-                          ? const _EmptyPeers()
-                          : ListView.separated(
-                              itemCount: controller.peers.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: 10),
-                              itemBuilder: (context, index) {
-                                final peer = controller.peers[index];
-                                return _PeerCard(peer: peer);
-                              },
+                      child: ListView(
+                        children: [
+                          if (controller.incomingPairingEvent
+                              case final event?) ...[
+                            _PairingPanel(
+                              event: event,
+                              onRespond:
+                                  event.requestId == null ||
+                                      !controller.canRespondToPairing(
+                                        event.requestId!,
+                                      )
+                                  ? null
+                                  : (accepted) => controller.respondToPairing(
+                                      event.requestId!,
+                                      accepted,
+                                    ),
                             ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (controller.peers.isEmpty)
+                            const _EmptyPeers()
+                          else
+                            for (
+                              var index = 0;
+                              index < controller.peers.length;
+                              index++
+                            ) ...[
+                              if (index > 0) const SizedBox(height: 10),
+                              _PeerCard(
+                                peer: controller.peers[index],
+                                controller: controller,
+                              ),
+                            ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -320,13 +345,20 @@ class _DiagnosticsSheet extends StatelessWidget {
 }
 
 class _PeerCard extends StatelessWidget {
-  const _PeerCard({required this.peer});
+  const _PeerCard({required this.peer, required this.controller});
 
   final DiscoveryPeer peer;
+  final DiscoveryController controller;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final pairing = controller.pairingEventFor(peer);
+    final hasEndpoint =
+        peer.bestEndpoint != null || peer.candidateEndpoints.isNotEmpty;
+    final pairingInProgress =
+        pairing?.kind == PairingEventKind.connecting ||
+        pairing?.kind == PairingEventKind.codeAvailable;
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -383,12 +415,133 @@ class _PeerCard extends StatelessWidget {
               label: l10n.endpointLabel,
               value: peer.bestEndpoint ?? l10n.bleAwaitingLan,
             ),
+            if (pairing != null) ...[
+              const SizedBox(height: 12),
+              _PairingSummary(event: pairing),
+            ],
+            const SizedBox(height: 12),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FilledButton.icon(
+                onPressed:
+                    controller.canPair &&
+                        peer.compatible &&
+                        hasEndpoint &&
+                        !pairingInProgress
+                    ? () => controller.connectToPeer(peer)
+                    : null,
+                icon: const Icon(Icons.lock_outline),
+                label: Text(l10n.connectSecurely),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 }
+
+class _PairingPanel extends StatelessWidget {
+  const _PairingPanel({required this.event, this.onRespond});
+
+  final PairingEvent event;
+  final ValueChanged<bool>? onRespond;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Card(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.pairingIncomingTitle,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            _PairingSummary(event: event),
+            if (event.kind == PairingEventKind.confirmationRequired &&
+                onRespond != null) ...[
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => onRespond!(true),
+                    icon: const Icon(Icons.verified_user_outlined),
+                    label: Text(l10n.pairingAccept),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => onRespond!(false),
+                    child: Text(l10n.pairingReject),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PairingSummary extends StatelessWidget {
+  const _PairingSummary({required this.event});
+
+  final PairingEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final code = event.shortCode;
+    final fingerprint = event.peerFingerprint;
+    return Semantics(
+      liveRegion: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_pairingStatusLabel(l10n, event)),
+          if (code != null) ...[
+            const SizedBox(height: 8),
+            Text(l10n.pairingCodeLabel),
+            SelectableText(
+              code,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w700,
+                letterSpacing: 5,
+              ),
+            ),
+          ],
+          if (fingerprint != null) ...[
+            const SizedBox(height: 6),
+            _PeerField(label: l10n.pairingFingerprintLabel, value: fingerprint),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+String _pairingStatusLabel(AppLocalizations l10n, PairingEvent event) =>
+    switch (event.kind) {
+      PairingEventKind.connecting => l10n.pairingConnecting,
+      PairingEventKind.codeAvailable ||
+      PairingEventKind.confirmationRequired => l10n.pairingCodeLabel,
+      PairingEventKind.trusted =>
+        event.alreadyTrusted
+            ? l10n.pairingTrustedRecognized
+            : l10n.pairingTrusted,
+      PairingEventKind.rejected => l10n.pairingRejected,
+      PairingEventKind.identityChanged => l10n.pairingIdentityChanged,
+      PairingEventKind.timedOut ||
+      PairingEventKind.cancelled => l10n.pairingTimedOut,
+      PairingEventKind.failed => l10n.pairingFailed,
+    };
 
 class _PeerField extends StatelessWidget {
   const _PeerField({required this.label, required this.value});

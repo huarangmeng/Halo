@@ -4,19 +4,15 @@ use std::{
         Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
-    time::Duration,
 };
 
-use halo_discovery::{
-    Capabilities, DeviceType, DiscoveryHandle, DiscoveryManager, DiscoverySession, LocalPresence,
-    PresenceId, ProtocolRange, ProviderId, ProviderKind, ProviderState,
-    ble::{decode_presence, encode_presence},
-    providers::{MdnsProvider, PresenceV4Provider, PresenceV6Provider},
-};
+use halo_core::{DiscoveryConfig, DiscoveryError, DiscoveryService};
 use thiserror::Error;
 use tokio::runtime::{Builder, Runtime};
 
-const BLE_OBSERVATION_TTL: Duration = Duration::from_secs(15);
+pub mod pairing_api;
+pub use pairing_api::*;
+
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 static SESSIONS: OnceLock<Mutex<HashMap<u64, SessionRuntime>>> = OnceLock::new();
 
@@ -36,11 +32,11 @@ pub struct DiscoveryPeer {
     pub capabilities: u64,
     pub sources: Vec<String>,
     pub best_endpoint: Option<String>,
+    pub candidate_endpoints: Vec<String>,
     pub candidate_count: u32,
     pub quarantined: bool,
 }
 
-/// Current health of one independently running discovery provider.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiscoveryProviderStatus {
     pub name: String,
@@ -57,32 +53,6 @@ pub enum DiscoveryDeviceType {
     Macos,
     Windows,
     Linux,
-}
-
-impl From<DiscoveryDeviceType> for DeviceType {
-    fn from(value: DiscoveryDeviceType) -> Self {
-        match value {
-            DiscoveryDeviceType::Unknown => Self::Unknown,
-            DiscoveryDeviceType::Android => Self::Android,
-            DiscoveryDeviceType::Ios => Self::Ios,
-            DiscoveryDeviceType::Macos => Self::Macos,
-            DiscoveryDeviceType::Windows => Self::Windows,
-            DiscoveryDeviceType::Linux => Self::Linux,
-        }
-    }
-}
-
-impl From<DeviceType> for DiscoveryDeviceType {
-    fn from(value: DeviceType) -> Self {
-        match value {
-            DeviceType::Unknown => Self::Unknown,
-            DeviceType::Android => Self::Android,
-            DeviceType::Ios => Self::Ios,
-            DeviceType::Macos => Self::Macos,
-            DeviceType::Windows => Self::Windows,
-            DeviceType::Linux => Self::Linux,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -102,148 +72,118 @@ pub enum PlatformProviderState {
 pub enum HaloApiError {
     #[error("invalid argument: {message}")]
     InvalidArgument { message: String },
-    #[error("discovery session does not exist")]
+    #[error("session does not exist")]
     SessionNotFound,
-    #[error("discovery core rejected the operation: {message}")]
+    #[error("Halo core rejected the operation: {message}")]
     Core { message: String },
-    #[error("discovery session registry is unavailable")]
+    #[error("session registry is unavailable")]
     InternalState,
 }
 
 struct SessionRuntime {
     runtime: Runtime,
-    local: LocalPresence,
-    handle: DiscoveryHandle,
-    session: Option<DiscoverySession>,
-    sequence: u64,
+    service: DiscoveryService,
 }
 
-/// Starts the one Rust-owned discovery session used by the Flutter application.
-///
-/// `enable_lan` is false only in deterministic unit tests. Product clients use
-/// true after the platform has granted local-network access.
+/// Starts the Rust SDK discovery service used by the Flutter application.
 pub fn discovery_start(
     quic_port: u16,
     enable_lan: bool,
     device_type: DiscoveryDeviceType,
 ) -> Result<DiscoveryBootstrap, HaloApiError> {
-    let protocol = ProtocolRange::new(1, 1).map_err(core_error)?;
-    let local = LocalPresence::new(
-        PresenceId::random(),
-        protocol,
-        Capabilities::default().with_device_type(device_type.into()),
-        quic_port,
-    )
-    .map_err(core_error)?;
     let runtime = Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .thread_name("halo-discovery")
         .build()
-        .map_err(|error| HaloApiError::Core {
-            message: error.to_string(),
-        })?;
-
-    let mut manager = DiscoveryManager::new(local.clone());
-    if enable_lan {
-        manager = manager
-            .with_provider(MdnsProvider::default())
-            .with_provider(PresenceV4Provider::default())
-            .with_provider(PresenceV6Provider::default());
-    }
-    let session = runtime.block_on(manager.start()).map_err(core_error)?;
-    let handle = session.handle();
+        .map_err(core_error)?;
+    let config = DiscoveryConfig::new(quic_port, device_type.into()).with_lan(enable_lan);
+    let (service, startup) = runtime
+        .block_on(DiscoveryService::start(config))
+        .map_err(discovery_error)?;
     let session_id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
     if session_id == 0 {
         return Err(HaloApiError::InternalState);
     }
-    let presence_id = local.presence_id.to_string();
-    let ble_presence = encode_presence(&local, 1).to_vec();
-    let session_runtime = SessionRuntime {
-        runtime,
-        local,
-        handle,
-        session: Some(session),
-        sequence: 1,
-    };
     sessions()
         .lock()
         .map_err(|_| HaloApiError::InternalState)?
-        .insert(session_id, session_runtime);
-
+        .insert(session_id, SessionRuntime { runtime, service });
     Ok(DiscoveryBootstrap {
         session_id,
-        presence_id,
-        device_type,
-        ble_presence,
+        presence_id: startup.presence_id,
+        device_type: startup.device_type.into(),
+        ble_presence: startup.ble_presence,
     })
 }
 
-/// Returns a newly sequenced descriptor for a native BLE driver to expose.
 pub fn discovery_refresh_ble_presence(session_id: u64) -> Result<Vec<u8>, HaloApiError> {
     with_session_mut(session_id, |session| {
-        session.sequence = session.sequence.saturating_add(1);
-        Ok(encode_presence(&session.local, session.sequence).to_vec())
+        Ok(session.service.refresh_ble_presence())
     })
 }
 
-/// Validates a raw platform BLE value in Rust and submits it to the shared manager.
 pub fn discovery_submit_ble(
     session_id: u64,
     platform: String,
     descriptor: Vec<u8>,
 ) -> Result<Vec<DiscoveryPeer>, HaloApiError> {
-    let provider = ble_provider_id(&platform)?;
     with_session_mut(session_id, |session| {
-        let observation =
-            decode_presence(&descriptor, provider, BLE_OBSERVATION_TTL).map_err(|error| {
-                HaloApiError::Core {
-                    message: error.to_string(),
-                }
-            })?;
         session
             .runtime
-            .block_on(session.handle.submit_observation(observation))
-            .map_err(core_error)?;
-        snapshot(session)
+            .block_on(session.service.submit_ble(&platform, &descriptor))
+            .map_err(discovery_error)
+            .map(map_peers)
     })
 }
 
-/// Normalizes raw native provider health into the Rust discovery event model.
 pub fn discovery_report_ble_state(
     session_id: u64,
     platform: String,
     state: PlatformProviderState,
     detail: Option<String>,
 ) -> Result<(), HaloApiError> {
-    let provider = ble_provider_id(&platform)?;
-    let normalized = normalize_provider_state(state, detail);
     with_session_mut(session_id, |session| {
         session
             .runtime
-            .block_on(session.handle.report_provider_state(provider, normalized))
-            .map_err(core_error)
+            .block_on(
+                session
+                    .service
+                    .report_ble_state(&platform, state.into(), detail),
+            )
+            .map_err(discovery_error)
     })
 }
 
 pub fn discovery_snapshot(session_id: u64) -> Result<Vec<DiscoveryPeer>, HaloApiError> {
-    with_session_mut(session_id, snapshot)
+    with_session_mut(session_id, |session| {
+        session
+            .runtime
+            .block_on(session.service.snapshot())
+            .map_err(discovery_error)
+            .map(map_peers)
+    })
 }
 
-/// Returns a stable, sorted health snapshot for all providers seen by Rust.
 pub fn discovery_provider_statuses(
     session_id: u64,
 ) -> Result<Vec<DiscoveryProviderStatus>, HaloApiError> {
     with_session_mut(session_id, |session| {
-        let mut statuses = session
+        session
             .runtime
-            .block_on(session.handle.provider_states())
-            .map_err(core_error)?
-            .into_iter()
-            .map(|(provider, state)| provider_status(provider, state))
-            .collect::<Vec<_>>();
-        statuses.sort_by(|left, right| left.name.cmp(&right.name));
-        Ok(statuses)
+            .block_on(session.service.provider_statuses())
+            .map_err(discovery_error)
+            .map(|statuses| {
+                statuses
+                    .into_iter()
+                    .map(|status| DiscoveryProviderStatus {
+                        name: status.name,
+                        kind: status.kind,
+                        state: status.state,
+                        detail: status.detail,
+                    })
+                    .collect()
+            })
     })
 }
 
@@ -253,13 +193,10 @@ pub fn discovery_stop(session_id: u64) -> Result<(), HaloApiError> {
         .map_err(|_| HaloApiError::InternalState)?
         .remove(&session_id)
         .ok_or(HaloApiError::SessionNotFound)?;
-    if let Some(discovery) = session.session.take() {
-        session
-            .runtime
-            .block_on(discovery.shutdown())
-            .map_err(core_error)?;
-    }
-    Ok(())
+    session
+        .runtime
+        .block_on(session.service.shutdown())
+        .map_err(discovery_error)
 }
 
 fn sessions() -> &'static Mutex<HashMap<u64, SessionRuntime>> {
@@ -277,113 +214,73 @@ fn with_session_mut<T>(
     operation(session)
 }
 
-fn snapshot(session: &mut SessionRuntime) -> Result<Vec<DiscoveryPeer>, HaloApiError> {
-    let peers = session
-        .runtime
-        .block_on(session.handle.snapshot())
-        .map_err(core_error)?;
-    Ok(peers
+fn map_peers(peers: Vec<halo_core::DiscoveryPeer>) -> Vec<DiscoveryPeer> {
+    peers
         .into_iter()
         .map(|peer| DiscoveryPeer {
-            presence_id: peer.presence_id.to_string(),
-            device_type: peer.capabilities.device_type().into(),
+            presence_id: peer.presence_id,
+            device_type: peer.device_type.into(),
             compatible: peer.compatible,
-            capabilities: peer.capabilities.bits(),
-            sources: peer
-                .sources
-                .into_iter()
-                .map(|source| source.to_string())
-                .collect(),
-            best_endpoint: peer
-                .best_endpoint
-                .map(|endpoint| endpoint.address().to_string()),
-            candidate_count: u32::try_from(peer.candidates.len()).unwrap_or(u32::MAX),
+            capabilities: peer.capabilities,
+            sources: peer.sources,
+            best_endpoint: peer.best_endpoint,
+            candidate_endpoints: peer.candidate_endpoints,
+            candidate_count: peer.candidate_count,
             quarantined: peer.quarantined,
         })
-        .collect())
+        .collect()
 }
 
-fn provider_status(provider: ProviderId, state: ProviderState) -> DiscoveryProviderStatus {
-    let (state_name, detail) = match state {
-        ProviderState::Starting => ("starting", None),
-        ProviderState::Ready => ("ready", None),
-        ProviderState::Degraded(detail) => ("degraded", Some(detail)),
-        ProviderState::PermissionRequired(detail) => ("permission_required", Some(detail)),
-        ProviderState::PermissionDenied(detail) => ("permission_denied", Some(detail)),
-        ProviderState::HardwareOff => ("hardware_off", None),
-        ProviderState::Unsupported => ("unsupported", None),
-        ProviderState::TemporarilyUnavailable(detail) => ("temporarily_unavailable", Some(detail)),
-        ProviderState::Failed {
-            recoverable,
-            reason,
-        } => (
-            if recoverable {
-                "failed_recoverable"
-            } else {
-                "failed"
-            },
-            Some(reason),
-        ),
-        ProviderState::Stopped => ("stopped", None),
-        _ => ("unknown", None),
-    };
-    DiscoveryProviderStatus {
-        name: provider.name().to_owned(),
-        kind: provider_kind_name(provider.kind()).to_owned(),
-        state: state_name.to_owned(),
-        detail,
+impl From<DiscoveryDeviceType> for halo_core::DeviceType {
+    fn from(value: DiscoveryDeviceType) -> Self {
+        match value {
+            DiscoveryDeviceType::Unknown => Self::Unknown,
+            DiscoveryDeviceType::Android => Self::Android,
+            DiscoveryDeviceType::Ios => Self::Ios,
+            DiscoveryDeviceType::Macos => Self::Macos,
+            DiscoveryDeviceType::Windows => Self::Windows,
+            DiscoveryDeviceType::Linux => Self::Linux,
+        }
     }
 }
 
-fn provider_kind_name(kind: &ProviderKind) -> &'static str {
-    match kind {
-        ProviderKind::Ble => "ble",
-        ProviderKind::Mdns => "mdns",
-        ProviderKind::PresenceV4 => "presence_v4",
-        ProviderKind::PresenceV6 => "presence_v6",
-        ProviderKind::Direct => "direct",
-        ProviderKind::WifiAware => "wifi_aware",
-        ProviderKind::WifiDirect => "wifi_direct",
-        ProviderKind::Custom => "custom",
-        _ => "unknown",
+impl From<halo_core::DeviceType> for DiscoveryDeviceType {
+    fn from(value: halo_core::DeviceType) -> Self {
+        match value {
+            halo_core::DeviceType::Unknown => Self::Unknown,
+            halo_core::DeviceType::Android => Self::Android,
+            halo_core::DeviceType::Ios => Self::Ios,
+            halo_core::DeviceType::Macos => Self::Macos,
+            halo_core::DeviceType::Windows => Self::Windows,
+            halo_core::DeviceType::Linux => Self::Linux,
+        }
     }
 }
 
-fn ble_provider_id(platform: &str) -> Result<ProviderId, HaloApiError> {
-    let name = match platform {
-        "android" => "ble-android",
-        "ios" => "ble-ios",
-        "macos" => "ble-macos",
-        "windows" => "ble-windows",
-        _ => {
-            return Err(HaloApiError::InvalidArgument {
-                message: "unknown platform BLE provider".to_owned(),
-            });
+impl From<PlatformProviderState> for halo_core::PlatformProviderState {
+    fn from(value: PlatformProviderState) -> Self {
+        match value {
+            PlatformProviderState::Starting => Self::Starting,
+            PlatformProviderState::Ready => Self::Ready,
+            PlatformProviderState::Degraded => Self::Degraded,
+            PlatformProviderState::PermissionRequired => Self::PermissionRequired,
+            PlatformProviderState::PermissionDenied => Self::PermissionDenied,
+            PlatformProviderState::HardwareOff => Self::HardwareOff,
+            PlatformProviderState::Unsupported => Self::Unsupported,
+            PlatformProviderState::TemporarilyUnavailable => Self::TemporarilyUnavailable,
+            PlatformProviderState::Stopped => Self::Stopped,
         }
-    };
-    ProviderId::new(ProviderKind::Ble, name).map_err(core_error)
+    }
 }
 
-fn normalize_provider_state(state: PlatformProviderState, detail: Option<String>) -> ProviderState {
-    let bounded_detail = detail
-        .unwrap_or_default()
-        .chars()
-        .take(160)
-        .collect::<String>();
-    match state {
-        PlatformProviderState::Starting => ProviderState::Starting,
-        PlatformProviderState::Ready => ProviderState::Ready,
-        PlatformProviderState::Degraded => ProviderState::Degraded(bounded_detail),
-        PlatformProviderState::PermissionRequired => {
-            ProviderState::PermissionRequired(bounded_detail)
-        }
-        PlatformProviderState::PermissionDenied => ProviderState::PermissionDenied(bounded_detail),
-        PlatformProviderState::HardwareOff => ProviderState::HardwareOff,
-        PlatformProviderState::Unsupported => ProviderState::Unsupported,
-        PlatformProviderState::TemporarilyUnavailable => {
-            ProviderState::TemporarilyUnavailable(bounded_detail)
-        }
-        PlatformProviderState::Stopped => ProviderState::Stopped,
+fn discovery_error(error: DiscoveryError) -> HaloApiError {
+    match error {
+        DiscoveryError::UnknownPlatform => HaloApiError::InvalidArgument {
+            message: "unknown platform BLE provider".to_owned(),
+        },
+        error => HaloApiError::Core {
+            message: error.to_string(),
+        },
     }
 }
 
@@ -398,63 +295,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ble_observation_crosses_ffi_into_rust_manager() {
+    fn adapter_starts_and_reads_empty_snapshot() {
         let bootstrap = discovery_start(44_330, false, DiscoveryDeviceType::Macos)
-            .unwrap_or_else(|error| panic!("start failed: {error}"));
-        let remote = LocalPresence::new(
-            PresenceId::from_bytes([0x42; 16]),
-            ProtocolRange::new(1, 1).unwrap_or_else(|error| panic!("range: {error}")),
-            Capabilities::from_bits(7).with_device_type(DeviceType::Android),
-            4433,
-        )
-        .unwrap_or_else(|error| panic!("remote: {error}"));
-
-        let peers = discovery_submit_ble(
-            bootstrap.session_id,
-            "android".to_owned(),
-            encode_presence(&remote, 9).to_vec(),
-        )
-        .unwrap_or_else(|error| panic!("submit failed: {error}"));
-
-        assert_eq!(peers.len(), 1);
-        assert_eq!(peers[0].presence_id, remote.presence_id.to_string());
-        assert_eq!(peers[0].device_type, DiscoveryDeviceType::Android);
-        assert_eq!(bootstrap.device_type, DiscoveryDeviceType::Macos);
+            .unwrap_or_else(|error| panic!("start: {error}"));
         assert!(!bootstrap.presence_id.is_empty());
-        assert_eq!(peers[0].sources, vec!["ble-android"]);
-        assert!(peers[0].best_endpoint.is_none());
-        discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop failed: {error}"));
+        assert_eq!(bootstrap.device_type, DiscoveryDeviceType::Macos);
+        assert!(
+            discovery_snapshot(bootstrap.session_id)
+                .unwrap_or_else(|error| panic!("snapshot: {error}"))
+                .is_empty()
+        );
+        discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop: {error}"));
     }
 
     #[test]
-    fn malformed_native_bytes_are_rejected_by_rust() {
+    fn malformed_native_bytes_are_rejected_by_core() {
         let bootstrap = discovery_start(44_331, false, DiscoveryDeviceType::Android)
-            .unwrap_or_else(|error| panic!("start failed: {error}"));
-        let error = discovery_submit_ble(bootstrap.session_id, "macos".to_owned(), vec![0; 58])
-            .expect_err("invalid descriptor must fail");
-        assert!(matches!(error, HaloApiError::Core { .. }));
-        discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop failed: {error}"));
+            .unwrap_or_else(|error| panic!("start: {error}"));
+        assert!(
+            discovery_submit_ble(bootstrap.session_id, "macos".to_owned(), vec![0; 58],).is_err()
+        );
+        discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop: {error}"));
     }
 
     #[test]
-    fn provider_health_snapshot_includes_native_ble_and_is_sorted() {
+    fn provider_health_crosses_thin_adapter() {
         let bootstrap = discovery_start(44_332, false, DiscoveryDeviceType::Ios)
-            .unwrap_or_else(|error| panic!("start failed: {error}"));
+            .unwrap_or_else(|error| panic!("start: {error}"));
         discovery_report_ble_state(
             bootstrap.session_id,
             "ios".to_owned(),
             PlatformProviderState::PermissionDenied,
             Some("denied by user".to_owned()),
         )
-        .unwrap_or_else(|error| panic!("state failed: {error}"));
-
+        .unwrap_or_else(|error| panic!("state: {error}"));
         let statuses = discovery_provider_statuses(bootstrap.session_id)
-            .unwrap_or_else(|error| panic!("statuses failed: {error}"));
-        assert_eq!(statuses.len(), 1);
+            .unwrap_or_else(|error| panic!("statuses: {error}"));
         assert_eq!(statuses[0].name, "ble-ios");
-        assert_eq!(statuses[0].kind, "ble");
         assert_eq!(statuses[0].state, "permission_denied");
-        assert_eq!(statuses[0].detail.as_deref(), Some("denied by user"));
-        discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop failed: {error}"));
+        discovery_stop(bootstrap.session_id).unwrap_or_else(|error| panic!("stop: {error}"));
     }
 }

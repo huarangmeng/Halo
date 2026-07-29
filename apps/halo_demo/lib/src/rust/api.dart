@@ -8,14 +8,11 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ble_provider_id`, `core_error`, `normalize_provider_state`, `provider_kind_name`, `provider_status`, `sessions`, `snapshot`, `with_session_mut`
+// These functions are ignored because they are not marked as `pub`: `core_error`, `discovery_error`, `map_peers`, `sessions`, `with_session_mut`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SessionRuntime`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`
 
-/// Starts the one Rust-owned discovery session used by the Flutter application.
-///
-/// `enable_lan` is false only in deterministic unit tests. Product clients use
-/// true after the platform has granted local-network access.
+/// Starts the Rust SDK discovery service used by the Flutter application.
 Future<DiscoveryBootstrap> discoveryStart({
   required int quicPort,
   required bool enableLan,
@@ -26,13 +23,11 @@ Future<DiscoveryBootstrap> discoveryStart({
   deviceType: deviceType,
 );
 
-/// Returns a newly sequenced descriptor for a native BLE driver to expose.
 Future<Uint8List> discoveryRefreshBlePresence({required BigInt sessionId}) =>
     HaloRustLib.instance.api.crateApiDiscoveryRefreshBlePresence(
       sessionId: sessionId,
     );
 
-/// Validates a raw platform BLE value in Rust and submits it to the shared manager.
 Future<List<DiscoveryPeer>> discoverySubmitBle({
   required BigInt sessionId,
   required String platform,
@@ -43,7 +38,6 @@ Future<List<DiscoveryPeer>> discoverySubmitBle({
   descriptor: descriptor,
 );
 
-/// Normalizes raw native provider health into the Rust discovery event model.
 Future<void> discoveryReportBleState({
   required BigInt sessionId,
   required String platform,
@@ -59,7 +53,6 @@ Future<void> discoveryReportBleState({
 Future<List<DiscoveryPeer>> discoverySnapshot({required BigInt sessionId}) =>
     HaloRustLib.instance.api.crateApiDiscoverySnapshot(sessionId: sessionId);
 
-/// Returns a stable, sorted health snapshot for all providers seen by Rust.
 Future<List<DiscoveryProviderStatus>> discoveryProviderStatuses({
   required BigInt sessionId,
 }) => HaloRustLib.instance.api.crateApiDiscoveryProviderStatuses(
@@ -109,6 +102,7 @@ class DiscoveryPeer {
   final BigInt capabilities;
   final List<String> sources;
   final String? bestEndpoint;
+  final List<String> candidateEndpoints;
   final int candidateCount;
   final bool quarantined;
 
@@ -119,6 +113,7 @@ class DiscoveryPeer {
     required this.capabilities,
     required this.sources,
     this.bestEndpoint,
+    required this.candidateEndpoints,
     required this.candidateCount,
     required this.quarantined,
   });
@@ -131,6 +126,7 @@ class DiscoveryPeer {
       capabilities.hashCode ^
       sources.hashCode ^
       bestEndpoint.hashCode ^
+      candidateEndpoints.hashCode ^
       candidateCount.hashCode ^
       quarantined.hashCode;
 
@@ -145,11 +141,11 @@ class DiscoveryPeer {
           capabilities == other.capabilities &&
           sources == other.sources &&
           bestEndpoint == other.bestEndpoint &&
+          candidateEndpoints == other.candidateEndpoints &&
           candidateCount == other.candidateCount &&
           quarantined == other.quarantined;
 }
 
-/// Current health of one independently running discovery provider.
 class DiscoveryProviderStatus {
   final String name;
   final String kind;

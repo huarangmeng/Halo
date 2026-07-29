@@ -1,0 +1,22 @@
+[package]
+name = "halo-crypto"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Rust-owned device identity and TLS-bound pairing for Halo"
+
+[dependencies]
+async-trait.workspace = true
+getrandom.workspace = true
+halo-protocol = { path = "../halo-protocol" }
+hkdf.workspace = true
+p256.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+zeroize.workspace = true
+
+[lints.rust]
+unsafe_code = "deny"

@@ -9,7 +9,9 @@ Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Ru
 > 项目状态：早期实现阶段。仓库现在已有 Android、iOS 和 macOS 共用的 Flutter 发现
 > Demo，底层使用 Rust 发现核心与极薄的原生 BLE 驱动。Android ↔ macOS 已完成一次
 > 真机互测；iOS arm64 已编译通过，但仍待真机互通验证。目前还没有 SDK 发布版、
-> 安全文件传输实现或四端验证。
+> 安全文件传输实现或四端验证。实验性的 TLS 绑定配对协议、QUIC 监听与连接、受保护
+> 身份存储、可信设备持久化和 Flutter 同意流程已经接入 Demo，并通过主机回环测试及
+> Android/macOS 编译检查，但尚未完成 Android ↔ macOS 配对真机验证。
 
 Halo 不是 AirDrop 的实现，也不会尝试逆向 Apple 的私有技术栈。近期目标更小，也
 更容易验证：当两台设备都打开 Halo，并处于彼此可达的同一局域网时，它们能够互相
@@ -130,6 +132,24 @@ flowchart TB
     Transfer --> Protocol
 ```
 
+### 公共 SDK 边界
+
+Rust 应用只依赖 `halo-core`。设备发现、连接、配对、同意事件和关闭流程都由这个统一
+入口提供。`halo-protocol`、`halo-crypto`、`halo-discovery` 和 `halo-transport` 是
+工作区内部实现 crate，不是 SDK 使用方需要分别接入的组件，目前均设置为
+`publish = false`。
+
+仓库开发阶段，Rust 调用方只需要一个依赖：
+
+```toml
+[dependencies]
+halo-core = { path = "path/to/Halo/crates/halo-core" }
+```
+
+Flutter 对外只有一套生成接口；后续 Android 发布一个 AAR，Apple 发布一个
+XCFramework。底层 crate 会被打进这些产物，业务方不需要感知或协调它们。
+`halo-ffi` 现在只负责 `halo-core` 与 Flutter 之间的句柄和类型转换。
+
 ### 控制面
 
 控制面负责：
@@ -230,7 +250,7 @@ capabilities() -> 平台和运行时能力报告
 FFI 边界只传递不透明 ID。Rust 负责 Socket、密钥、任务、传输状态和错误分类；Dart
 接收不可变的视图模型，并调用较粗粒度的命令。
 
-## 计划中的仓库结构
+## 仓库结构
 
 ```text
 Halo/
@@ -253,9 +273,9 @@ Halo/
 └── tools/
 ```
 
-Tokio（异步执行）、Quinn（QUIC）、rustls（TLS）、BLAKE3（内容摘要）和
-`flutter_rust_bridge`（生成 Dart/Rust 绑定）是当前可能采用的方案，还不是已经确定
-的依赖。所有重要依赖都必须先在四个平台上验证，并通过 ADR 记录，才能成为架构承诺。
+实验阶段的发现与配对核心使用 Tokio（异步执行）、Quinn（QUIC）、rustls（TLS）、
+P-256、HKDF-SHA-256 和 `flutter_rust_bridge`（生成 Dart/Rust 绑定）。BLAKE3 仍只是
+未来内容摘要的候选。相关真机矩阵通过之前，这些依赖不能被描述为已经完成跨平台验证。
 
 ## 交付计划
 

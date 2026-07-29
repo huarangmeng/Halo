@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api.dart';
+import 'api/pairing_api.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -66,7 +67,7 @@ class HaloRustLib
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1370488548;
+  int get rustContentHash => -1651455156;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -110,6 +111,30 @@ abstract class HaloRustLibApi extends BaseApi {
     required String platform,
     required List<int> descriptor,
   });
+
+  Future<void> crateApiPairingApiPairingConnect({
+    required BigInt sessionId,
+    required String peerPresenceId,
+    required List<String> endpoints,
+  });
+
+  Future<List<PairingEvent>> crateApiPairingApiPairingEvents({
+    required BigInt sessionId,
+    required BigInt afterEventId,
+  });
+
+  Future<void> crateApiPairingApiPairingRespond({
+    required BigInt sessionId,
+    required BigInt requestId,
+    required bool accepted,
+  });
+
+  Future<PairingBootstrap> crateApiPairingApiPairingStart({
+    Uint8List? identityBlob,
+    required String trustStoreDirectory,
+  });
+
+  Future<void> crateApiPairingApiPairingStop({required BigInt sessionId});
 }
 
 class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
@@ -358,6 +383,178 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     argNames: ["sessionId", "platform", "descriptor"],
   );
 
+  @override
+  Future<void> crateApiPairingApiPairingConnect({
+    required BigInt sessionId,
+    required String peerPresenceId,
+    required List<String> endpoints,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_String(peerPresenceId, serializer);
+          sse_encode_list_String(endpoints, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingConnectConstMeta,
+        argValues: [sessionId, peerPresenceId, endpoints],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingConnectConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_connect",
+        argNames: ["sessionId", "peerPresenceId", "endpoints"],
+      );
+
+  @override
+  Future<List<PairingEvent>> crateApiPairingApiPairingEvents({
+    required BigInt sessionId,
+    required BigInt afterEventId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(afterEventId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 9,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_pairing_event,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingEventsConstMeta,
+        argValues: [sessionId, afterEventId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingEventsConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_events",
+        argNames: ["sessionId", "afterEventId"],
+      );
+
+  @override
+  Future<void> crateApiPairingApiPairingRespond({
+    required BigInt sessionId,
+    required BigInt requestId,
+    required bool accepted,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_bool(accepted, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingRespondConstMeta,
+        argValues: [sessionId, requestId, accepted],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingRespondConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_respond",
+        argNames: ["sessionId", "requestId", "accepted"],
+      );
+
+  @override
+  Future<PairingBootstrap> crateApiPairingApiPairingStart({
+    Uint8List? identityBlob,
+    required String trustStoreDirectory,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_list_prim_u_8_strict(identityBlob, serializer);
+          sse_encode_String(trustStoreDirectory, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 11,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_pairing_bootstrap,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingStartConstMeta,
+        argValues: [identityBlob, trustStoreDirectory],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingStartConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_start",
+        argNames: ["identityBlob", "trustStoreDirectory"],
+      );
+
+  @override
+  Future<void> crateApiPairingApiPairingStop({required BigInt sessionId}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingStopConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingStopConstMeta =>
+      const TaskConstMeta(debugName: "pairing_stop", argNames: ["sessionId"]);
+
   @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -368,6 +565,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
+  }
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_u_64(raw);
   }
 
   @protected
@@ -394,8 +597,8 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   DiscoveryPeer dco_decode_discovery_peer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return DiscoveryPeer(
       presenceId: dco_decode_String(arr[0]),
       deviceType: dco_decode_discovery_device_type(arr[1]),
@@ -403,8 +606,9 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       capabilities: dco_decode_u_64(arr[3]),
       sources: dco_decode_list_String(arr[4]),
       bestEndpoint: dco_decode_opt_String(arr[5]),
-      candidateCount: dco_decode_u_32(arr[6]),
-      quarantined: dco_decode_bool(arr[7]),
+      candidateEndpoints: dco_decode_list_String(arr[6]),
+      candidateCount: dco_decode_u_32(arr[7]),
+      quarantined: dco_decode_bool(arr[8]),
     );
   }
 
@@ -468,6 +672,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  List<PairingEvent> dco_decode_list_pairing_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_pairing_event).toList();
+  }
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as List<int>;
@@ -483,6 +693,55 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
+  }
+
+  @protected
+  Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_prim_u_8_strict(raw);
+  }
+
+  @protected
+  PairingBootstrap dco_decode_pairing_bootstrap(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return PairingBootstrap(
+      sessionId: dco_decode_u_64(arr[0]),
+      listenPort: dco_decode_u_16(arr[1]),
+      identityBlobToPersist: dco_decode_opt_list_prim_u_8_strict(arr[2]),
+    );
+  }
+
+  @protected
+  PairingEvent dco_decode_pairing_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return PairingEvent(
+      eventId: dco_decode_u_64(arr[0]),
+      requestId: dco_decode_opt_box_autoadd_u_64(arr[1]),
+      kind: dco_decode_pairing_event_kind(arr[2]),
+      peerPresenceId: dco_decode_opt_String(arr[3]),
+      peerFingerprint: dco_decode_opt_String(arr[4]),
+      shortCode: dco_decode_opt_String(arr[5]),
+      alreadyTrusted: dco_decode_bool(arr[6]),
+      detail: dco_decode_opt_String(arr[7]),
+    );
+  }
+
+  @protected
+  PairingEventKind dco_decode_pairing_event_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return PairingEventKind.values[raw as int];
   }
 
   @protected
@@ -535,6 +794,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_64(deserializer));
+  }
+
+  @protected
   DiscoveryBootstrap sse_decode_discovery_bootstrap(
     SseDeserializer deserializer,
   ) {
@@ -569,6 +834,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     var var_capabilities = sse_decode_u_64(deserializer);
     var var_sources = sse_decode_list_String(deserializer);
     var var_bestEndpoint = sse_decode_opt_String(deserializer);
+    var var_candidateEndpoints = sse_decode_list_String(deserializer);
     var var_candidateCount = sse_decode_u_32(deserializer);
     var var_quarantined = sse_decode_bool(deserializer);
     return DiscoveryPeer(
@@ -578,6 +844,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       capabilities: var_capabilities,
       sources: var_sources,
       bestEndpoint: var_bestEndpoint,
+      candidateEndpoints: var_candidateEndpoints,
       candidateCount: var_candidateCount,
       quarantined: var_quarantined,
     );
@@ -668,6 +935,20 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  List<PairingEvent> sse_decode_list_pairing_event(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PairingEvent>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_pairing_event(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -690,6 +971,73 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     } else {
       return null;
     }
+  }
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_prim_u_8_strict(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  PairingBootstrap sse_decode_pairing_bootstrap(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sessionId = sse_decode_u_64(deserializer);
+    var var_listenPort = sse_decode_u_16(deserializer);
+    var var_identityBlobToPersist = sse_decode_opt_list_prim_u_8_strict(
+      deserializer,
+    );
+    return PairingBootstrap(
+      sessionId: var_sessionId,
+      listenPort: var_listenPort,
+      identityBlobToPersist: var_identityBlobToPersist,
+    );
+  }
+
+  @protected
+  PairingEvent sse_decode_pairing_event(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_eventId = sse_decode_u_64(deserializer);
+    var var_requestId = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_kind = sse_decode_pairing_event_kind(deserializer);
+    var var_peerPresenceId = sse_decode_opt_String(deserializer);
+    var var_peerFingerprint = sse_decode_opt_String(deserializer);
+    var var_shortCode = sse_decode_opt_String(deserializer);
+    var var_alreadyTrusted = sse_decode_bool(deserializer);
+    var var_detail = sse_decode_opt_String(deserializer);
+    return PairingEvent(
+      eventId: var_eventId,
+      requestId: var_requestId,
+      kind: var_kind,
+      peerPresenceId: var_peerPresenceId,
+      peerFingerprint: var_peerFingerprint,
+      shortCode: var_shortCode,
+      alreadyTrusted: var_alreadyTrusted,
+      detail: var_detail,
+    );
+  }
+
+  @protected
+  PairingEventKind sse_decode_pairing_event_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return PairingEventKind.values[inner];
   }
 
   @protected
@@ -743,6 +1091,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self, serializer);
+  }
+
+  @protected
   void sse_encode_discovery_bootstrap(
     DiscoveryBootstrap self,
     SseSerializer serializer,
@@ -772,6 +1126,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     sse_encode_u_64(self.capabilities, serializer);
     sse_encode_list_String(self.sources, serializer);
     sse_encode_opt_String(self.bestEndpoint, serializer);
+    sse_encode_list_String(self.candidateEndpoints, serializer);
     sse_encode_u_32(self.candidateCount, serializer);
     sse_encode_bool(self.quarantined, serializer);
   }
@@ -845,6 +1200,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_list_pairing_event(
+    List<PairingEvent> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_pairing_event(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_loose(
     List<int> self,
     SseSerializer serializer,
@@ -874,6 +1241,62 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     if (self != null) {
       sse_encode_String(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_prim_u_8_strict(
+    Uint8List? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_prim_u_8_strict(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_pairing_bootstrap(
+    PairingBootstrap self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.sessionId, serializer);
+    sse_encode_u_16(self.listenPort, serializer);
+    sse_encode_opt_list_prim_u_8_strict(self.identityBlobToPersist, serializer);
+  }
+
+  @protected
+  void sse_encode_pairing_event(PairingEvent self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.eventId, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.requestId, serializer);
+    sse_encode_pairing_event_kind(self.kind, serializer);
+    sse_encode_opt_String(self.peerPresenceId, serializer);
+    sse_encode_opt_String(self.peerFingerprint, serializer);
+    sse_encode_opt_String(self.shortCode, serializer);
+    sse_encode_bool(self.alreadyTrusted, serializer);
+    sse_encode_opt_String(self.detail, serializer);
+  }
+
+  @protected
+  void sse_encode_pairing_event_kind(
+    PairingEventKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

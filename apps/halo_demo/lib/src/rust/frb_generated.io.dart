@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api.dart';
+import 'api/pairing_api.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -23,6 +24,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
   DiscoveryBootstrap dco_decode_discovery_bootstrap(dynamic raw);
@@ -54,6 +58,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  List<PairingEvent> dco_decode_list_pairing_event(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
@@ -61,6 +68,21 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  PairingBootstrap dco_decode_pairing_bootstrap(dynamic raw);
+
+  @protected
+  PairingEvent dco_decode_pairing_event(dynamic raw);
+
+  @protected
+  PairingEventKind dco_decode_pairing_event_kind(dynamic raw);
 
   @protected
   PlatformProviderState dco_decode_platform_provider_state(dynamic raw);
@@ -85,6 +107,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
   DiscoveryBootstrap sse_decode_discovery_bootstrap(
@@ -124,6 +149,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  List<PairingEvent> sse_decode_list_pairing_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
@@ -131,6 +161,21 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  PairingBootstrap sse_decode_pairing_bootstrap(SseDeserializer deserializer);
+
+  @protected
+  PairingEvent sse_decode_pairing_event(SseDeserializer deserializer);
+
+  @protected
+  PairingEventKind sse_decode_pairing_event_kind(SseDeserializer deserializer);
 
   @protected
   PlatformProviderState sse_decode_platform_provider_state(
@@ -157,6 +202,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
   void sse_encode_discovery_bootstrap(
@@ -201,6 +249,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  void sse_encode_list_pairing_event(
+    List<PairingEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
@@ -211,6 +265,30 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_list_prim_u_8_strict(
+    Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pairing_bootstrap(
+    PairingBootstrap self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pairing_event(PairingEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pairing_event_kind(
+    PairingEventKind self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_platform_provider_state(
