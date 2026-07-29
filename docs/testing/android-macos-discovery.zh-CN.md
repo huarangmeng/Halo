@@ -55,9 +55,13 @@ flutter run -d <ANDROID_DEVICE_ID>
 第二个终端运行 macOS：
 
 ```bash
-cd apps/halo_demo
-flutter run -d macos
+./tools/run-macos-device-validation.sh
 ```
+
+该脚本通过 Xcode `Runner` scheme 构建并启动 Development 签名产物，同时校验
+`application-identifier` 与 Keychain access group。不要用 `flutter run -d macos`
+代替：Flutter 的 macOS 调试流程会生成 ad-hoc 签名，无法访问 Data Protection
+Keychain，还可能在本机留下同 Bundle ID 的第二个 App。
 
 两端都点击 **Start discovery**。Android 需要批准“附近设备”和“精确位置”权限；位置
 权限只用于兼容会抑制 BLE 扫描结果的厂商系统，Halo 不推断、保存或上传物理位置。

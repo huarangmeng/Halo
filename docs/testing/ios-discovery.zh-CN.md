@@ -31,8 +31,8 @@ App 和 `halo_ffi` framework 都应为 arm64。
 
 1. 在 Xcode 中为 Runner 选择稳定的开发团队和签名；iPhone 需要信任开发者模式。
 2. 用数据线连接 iPhone，执行 `flutter devices` 获取设备 ID。
-3. 执行 `flutter run -d <IOS_DEVICE_ID>`，另一端执行 `flutter run -d macos` 或启动
-   Android 真机上的 Halo。
+3. 执行 `flutter run -d <IOS_DEVICE_ID>`，另一端在仓库根目录执行
+   `./tools/run-macos-device-validation.sh`，或启动 Android 真机上的 Halo。
 4. 两端保持前台，连接同一个可互访局域网并打开蓝牙，然后点击“开始发现”。
 5. 首次弹窗允许蓝牙和本地网络访问。Halo 不请求后台蓝牙能力。
 

@@ -29,10 +29,19 @@ back to English for unsupported languages.
 flutter pub get
 flutter analyze
 flutter test
-flutter run -d macos
 flutter run -d <ANDROID_DEVICE_ID>
 flutter run -d <IOS_DEVICE_ID>
 ```
+
+Run the signed macOS physical-device peer from the repository root:
+
+```bash
+./tools/run-macos-device-validation.sh
+```
+
+The script uses the Xcode `Runner` scheme and validates the Data Protection
+Keychain entitlements. Do not use `flutter run -d macos` for device validation;
+it produces an ad-hoc-signed app that cannot use this identity store.
 
 See
 [`../../docs/testing/android-macos-discovery.zh-CN.md`](../../docs/testing/android-macos-discovery.zh-CN.md)

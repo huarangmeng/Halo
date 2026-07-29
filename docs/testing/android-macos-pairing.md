@@ -7,8 +7,10 @@ devices. A successful build or host loopback test is not cross-device evidence.
 
 - Copy `apps/halo_demo/macos/Runner/Configs/Signing.local.xcconfig.example`
   to `Signing.local.xcconfig`, set `HALO_DEVELOPMENT_TEAM` to the Apple Team
-  selected in Xcode, and build the macOS app through the `Runner` scheme. The
-  local file is ignored so a personal Team ID is never committed.
+  selected in Xcode, and run `./tools/run-macos-device-validation.sh` from the
+  repository root. The script builds and launches the macOS app through the
+  `Runner` scheme. The local file is ignored so a personal Team ID is never
+  committed.
 - Both devices run the same revision and are on a mutually reachable LAN.
 - Halo is open in the foreground on both devices.
 - Discovery shows a LAN endpoint for the other device.
