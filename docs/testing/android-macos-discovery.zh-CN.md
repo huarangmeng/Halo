@@ -13,6 +13,9 @@ Rust discovery core。BLE 原生代码只负责调用系统蓝牙 API 和搬运�
 - Android 已在启动时把 UDP socket 固定到当前非计费 Wi-Fi/以太网 `Network`，再通过
   JNI 直接把 FD 所有权交给 Rust；无合格网络或绑定失败时仅建立 loopback listener。
   此路径已通过主机构建，尚未通过本节真机矩阵。
+- macOS 已使用 Network.framework 选择非昂贵、非低数据模式的 Wi-Fi/以太网接口，
+  通过 `IP_BOUND_IF` 固定 IPv4 UDP socket 后直接把 FD 所有权交给 Rust；失败时同样只
+  建立 loopback listener。Apple IPv6 精确绑定与真机路由验证仍未完成。
 - 已实现 Rust 单文件传输核心、配对后数据 stream、Flutter 发送/接收确认界面，以及
   Android 文档选择器和 macOS 文件面板。主机回环端到端测试与两端 Debug 编译已通过；
   Android ↔ macOS 真机文件传输仍待验证，不能据此标记为已支持。
@@ -86,6 +89,8 @@ Android 17 还会请求本地网络访问。macOS 首次使用时需要批准蓝
 6. Android 的 `local_network` 详情为 `local_network_socket_bound` 后才允许 LAN 配对；
    所选 Wi-Fi 消失或变为计费网络后必须显示需要重启或不可用，旧 QUIC 会话不能迁移到
    新路由；仅改变系统默认路由也不能把已绑定 socket 移到蜂窝或 VPN。
+7. macOS 同样只有在 `local_network_socket_bound` 时允许 LAN 配对；切换接口、启用低
+   数据模式或进入昂贵路径后应要求重启或显示不可用，旧 socket 不能跟随默认路由迁移。
 
 这部分只定义发现互通标准；配对真机标准见
 [`android-macos-pairing.md`](android-macos-pairing.md)。配对通过后，可继续执行文件传输

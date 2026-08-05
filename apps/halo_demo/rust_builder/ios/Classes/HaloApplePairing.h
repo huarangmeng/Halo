@@ -8,6 +8,10 @@
 extern "C" {
 #endif
 
+/* Takes ownership of every nonnegative descriptor passed to it. */
+int32_t halo_apple_lan_register_bound_socket(int32_t file_descriptor);
+int32_t halo_apple_lan_disable(void);
+
 int32_t halo_apple_pairing_attach(
     uint64_t session_id,
     const uint8_t *peer_presence_id,

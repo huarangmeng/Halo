@@ -578,6 +578,12 @@ abstract class AppLocalizations {
   /// **'The current local network is metered; nearby mode will not use it for transfer.'**
   String get capabilityLocalNetworkMetered;
 
+  /// No description provided for @capabilityLocalNetworkConstrained.
+  ///
+  /// In en, this message translates to:
+  /// **'The current local network is in Low Data Mode; nearby mode will not use it for transfer.'**
+  String get capabilityLocalNetworkConstrained;
+
   /// No description provided for @capabilityLocalNetworkVpn.
   ///
   /// In en, this message translates to:

@@ -256,6 +256,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get capabilityLocalNetworkMetered => '当前局域网按流量计费；附近模式不会使用它传输文件。';
 
   @override
+  String get capabilityLocalNetworkConstrained =>
+      '当前局域网启用了低数据模式；附近模式不会使用它传输文件。';
+
+  @override
   String get capabilityLocalNetworkVpn => '当前局域网路由包含 VPN；附近模式不会使用它。';
 
   @override

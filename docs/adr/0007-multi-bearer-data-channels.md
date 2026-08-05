@@ -118,7 +118,11 @@ directly to Rust through JNI, and Rust consumes it once. Missing or failed
 native preparation produces a loopback-only listener, never a wildcard
 fallback. If the selected Android `Network` disappears or becomes ineligible,
 discovery must restart until endpoint hot replacement exists; changing only
-the default route does not migrate the bound socket. Apple/Windows LAN binding,
-common-broker integration, and
-Wi-Fi Direct/Wi-Fi Aware providers remain incomplete. Therefore this host-built
-integration does not advance any provider's support label before device tests.
+the default route does not migrate the bound socket. iOS/macOS now select an
+eligible, non-expensive, unconstrained Network.framework Wi-Fi/Ethernet
+interface, apply `IP_BOUND_IF` to a native IPv4 UDP socket, and transfer its
+descriptor directly to the same Rust registry. Missing or failed preparation
+also produces a loopback-only listener. Apple IPv6 binding, Windows LAN
+binding, common-broker integration, and Wi-Fi Direct/Wi-Fi Aware providers
+remain incomplete. Therefore these host-built integrations do not advance any
+provider's support label before device tests.

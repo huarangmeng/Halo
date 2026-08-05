@@ -979,8 +979,9 @@ String _capabilityDetailLabel(
   'wifi_state_unavailable' => l10n.capabilityWifiUnsupported,
   'local_network_connected' => l10n.capabilityLocalNetworkConnected,
   'local_network_socket_bound' => l10n.capabilityLocalNetworkSocketBound,
-  'local_network_metered' => l10n.capabilityLocalNetworkMetered,
-  'local_network_vpn' => l10n.capabilityLocalNetworkVpn,
+      'local_network_metered' => l10n.capabilityLocalNetworkMetered,
+      'local_network_constrained' => l10n.capabilityLocalNetworkConstrained,
+      'local_network_vpn' => l10n.capabilityLocalNetworkVpn,
   'local_network_binding_failed' => l10n.capabilityLocalNetworkBindingFailed,
   'local_network_not_prepared' => l10n.capabilityLocalNetworkNotPrepared,
   'local_network_restart_required' =>

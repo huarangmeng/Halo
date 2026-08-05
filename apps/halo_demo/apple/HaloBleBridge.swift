@@ -30,6 +30,9 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   private var providerGeneration: UInt64 = 0
   private let pathMonitor = NWPathMonitor()
   private let pathMonitorQueue = DispatchQueue(label: "org.halo.network-status")
+  private var latestNetworkPath: NWPath?
+  private var preparedLanInterfaceIndex: UInt32?
+  private var lanPreparationAttempted = false
   private var lastBleStateName: String?
   private var wifiState = "temporarily_unavailable"
   private var wifiDetail = "wifi_not_connected"
@@ -99,6 +102,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       case .denied, .restricted:
         result(["ready": false, "reason": "permission_denied"])
       case .allowedAlways, .notDetermined:
+        prepareLanSocket()
         result(["ready": true, "reason": "ready"])
       @unknown default:
         result(["ready": false, "reason": "permission_denied"])
@@ -812,6 +816,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   }
 
   private func updateNetworkState(_ path: NWPath) {
+    latestNetworkPath = path
     guard path.status == .satisfied else {
       wifiState = "temporarily_unavailable"
       wifiDetail = "wifi_not_connected"
@@ -822,18 +827,76 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     if path.usesInterfaceType(.wifi) {
       wifiState = "ready"
       wifiDetail = "wifi_connected"
-      localNetworkState = "ready"
-      localNetworkDetail = "local_network_connected"
     } else if path.usesInterfaceType(.wiredEthernet) {
       wifiState = "temporarily_unavailable"
       wifiDetail = "wifi_not_connected"
-      localNetworkState = "ready"
-      localNetworkDetail = "ethernet_connected"
     } else {
       wifiState = "temporarily_unavailable"
       wifiDetail = "wifi_not_connected"
       localNetworkState = "temporarily_unavailable"
       localNetworkDetail = "no_local_network_route"
+      return
+    }
+
+    guard let interface = HaloAppleBoundLanSocket.eligibleInterface(on: path),
+          let interfaceIndex = UInt32(exactly: interface.index)
+    else {
+      localNetworkState = "temporarily_unavailable"
+      localNetworkDetail = path.isExpensive
+        ? "local_network_metered"
+        : path.isConstrained
+          ? "local_network_constrained"
+          : "no_local_network_route"
+      return
+    }
+    if let preparedLanInterfaceIndex {
+      if preparedLanInterfaceIndex == interfaceIndex {
+        localNetworkState = "ready"
+        localNetworkDetail = "local_network_socket_bound"
+      } else {
+        localNetworkState = "temporarily_unavailable"
+        localNetworkDetail = "local_network_restart_required"
+      }
+    } else if lanPreparationAttempted {
+      localNetworkState = "temporarily_unavailable"
+      localNetworkDetail = "local_network_restart_required"
+    } else {
+      localNetworkState = "stopped"
+      localNetworkDetail = "local_network_not_prepared"
+    }
+  }
+
+  private func prepareLanSocket() {
+    lanPreparationAttempted = true
+    preparedLanInterfaceIndex = nil
+    let path = latestNetworkPath ?? pathMonitor.currentPath
+    guard let interface = HaloAppleBoundLanSocket.eligibleInterface(on: path),
+          let interfaceIndex = UInt32(exactly: interface.index)
+    else {
+      if halo_apple_lan_disable() != haloAppleNativeStatusOK {
+        localNetworkState = "failed"
+        localNetworkDetail = "local_network_binding_failed"
+      } else {
+        updateNetworkState(path)
+      }
+      return
+    }
+    do {
+      let descriptor = try HaloAppleBoundLanSocket.makeIPv4Socket(on: interface)
+      // Rust consumes every valid descriptor, including when registration
+      // returns an internal error. Swift must never close it after this call.
+      guard halo_apple_lan_register_bound_socket(descriptor) == haloAppleNativeStatusOK else {
+        localNetworkState = "failed"
+        localNetworkDetail = "local_network_binding_failed"
+        return
+      }
+      preparedLanInterfaceIndex = interfaceIndex
+      localNetworkState = "ready"
+      localNetworkDetail = "local_network_socket_bound"
+    } catch {
+      _ = halo_apple_lan_disable()
+      localNetworkState = "failed"
+      localNetworkDetail = "local_network_binding_failed"
     }
   }
 

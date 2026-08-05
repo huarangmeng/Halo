@@ -116,10 +116,20 @@ independently, but LAN pairing is unavailable.
 The Android listener is pinned for the lifetime of the current discovery
 session. A change in the process default route does not move it. If the selected
 `Network` disappears or becomes ineligible, capability state requests a
-discovery restart; hot endpoint replacement is not implemented yet. Apple and Windows
-LAN adapters still use the wildcard branch and remain an exact-interface
-integration gate. Wi-Fi Direct and Wi-Fi Aware will reuse the same owned-socket
-handoff after their network establishment adapters exist.
+discovery restart; hot endpoint replacement is not implemented yet.
+
+iOS and macOS now apply the same ownership rule without routing a descriptor
+through Dart. `NWPath` must be satisfied, IPv4-capable, non-expensive, and not
+constrained. Swift chooses a Wi-Fi or wired-Ethernet `NWInterface`, creates an
+IPv4 UDP socket, applies `IP_BOUND_IF` with that interface's system index,
+binds an ephemeral port, and transfers the descriptor once through the native
+C ABI into Quinn. Ineligible or failed preparation registers a loopback-only
+listener. If the selected interface changes, capability state requires a
+discovery restart. The current Apple exact-binding path is IPv4-only; IPv6
+interface binding remains a separate validation gate. Windows LAN binding and
+hot endpoint replacement remain pending. Wi-Fi Direct and Wi-Fi Aware will
+reuse the same owned-socket handoff after their network establishment adapters
+exist.
 It now retries another discovered LAN endpoint after recoverable transport,
 protocol, or authentication failure, and retains only an authenticated
 connection, but migration-safe exact-interface integration remains pending.
@@ -652,6 +662,9 @@ success or same-process loopback is not provider support.
 - Apple: [Wi-Fi Aware](https://developer.apple.com/documentation/WiFiAware)
 - Apple: [Connecting devices for peer-to-peer Wi-Fi](https://developer.apple.com/documentation/wifiaware/connecting-paired-devices)
 - Apple: [QUIC metadata](https://developer.apple.com/documentation/network/nwprotocolquic/metadata)
+- Apple: [`NWPath`](https://developer.apple.com/documentation/network/nwpath)
+- Apple: [`NWInterface`](https://developer.apple.com/documentation/network/nwinterface)
+- Apple: [`NWPath.isExpensive`](https://developer.apple.com/documentation/network/nwpath/isexpensive)
 - Apple: [`NWConnectionGroup`](https://developer.apple.com/documentation/network/nwconnectiongroup)
 - Apple: [`NWMultiplexGroup`](https://developer.apple.com/documentation/network/nwmultiplexgroup)
 - Apple: [`sec_protocol_metadata_create_secret`](https://developer.apple.com/documentation/security/sec_protocol_metadata_create_secret%28_%3A_%3A_%3A_%3A%29)

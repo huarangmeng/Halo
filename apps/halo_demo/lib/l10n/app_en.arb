@@ -89,6 +89,7 @@
   "capabilityLocalNetworkConnected": "A local-network route is available.",
   "capabilityLocalNetworkSocketBound": "QUIC is pinned to the current unmetered local network.",
   "capabilityLocalNetworkMetered": "The current local network is metered; nearby mode will not use it for transfer.",
+  "capabilityLocalNetworkConstrained": "The current local network is in Low Data Mode; nearby mode will not use it for transfer.",
   "capabilityLocalNetworkVpn": "The active local route includes a VPN; nearby mode will not use it.",
   "capabilityLocalNetworkBindingFailed": "The local-network socket could not be pinned safely.",
   "capabilityLocalNetworkNotPrepared": "The local-network socket has not been prepared yet.",

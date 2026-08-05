@@ -80,6 +80,7 @@
   "capabilityLocalNetworkConnected": "当前有可用的局域网路由。",
   "capabilityLocalNetworkSocketBound": "QUIC 已固定到当前非计费局域网。",
   "capabilityLocalNetworkMetered": "当前局域网按流量计费；附近模式不会使用它传输文件。",
+  "capabilityLocalNetworkConstrained": "当前局域网启用了低数据模式；附近模式不会使用它传输文件。",
   "capabilityLocalNetworkVpn": "当前局域网路由包含 VPN；附近模式不会使用它。",
   "capabilityLocalNetworkBindingFailed": "无法将局域网 Socket 安全固定到当前网络。",
   "capabilityLocalNetworkNotPrepared": "局域网 Socket 尚未准备。",

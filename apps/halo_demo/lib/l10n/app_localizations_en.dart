@@ -287,6 +287,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'The current local network is metered; nearby mode will not use it for transfer.';
 
   @override
+  String get capabilityLocalNetworkConstrained =>
+      'The current local network is in Low Data Mode; nearby mode will not use it for transfer.';
+
+  @override
   String get capabilityLocalNetworkVpn =>
       'The active local route includes a VPN; nearby mode will not use it.';
 

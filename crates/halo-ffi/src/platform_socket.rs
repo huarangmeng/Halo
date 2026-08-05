@@ -6,10 +6,10 @@ use std::{
 };
 
 #[cfg_attr(
-    not(target_os = "android"),
+    not(any(target_os = "android", target_os = "ios", target_os = "macos")),
     allow(
         dead_code,
-        reason = "variants are produced only by the Android JNI adapter"
+        reason = "variants are produced only by native platform adapters"
     )
 )]
 pub(crate) enum RegisteredLanEndpoint {
@@ -23,7 +23,7 @@ struct LanEndpointRegistry {
 }
 
 impl LanEndpointRegistry {
-    #[cfg(any(target_os = "android", test))]
+    #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos", test))]
     fn replace(&mut self, endpoint: RegisteredLanEndpoint) {
         self.endpoint = Some(endpoint);
     }
@@ -35,12 +35,12 @@ impl LanEndpointRegistry {
 
 static LAN_ENDPOINT: OnceLock<Mutex<LanEndpointRegistry>> = OnceLock::new();
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
 pub(crate) fn register_bound_lan_socket(socket: UdpSocket) -> Result<(), ()> {
     replace(RegisteredLanEndpoint::Bound(socket))
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
 pub(crate) fn disable_lan_endpoint() -> Result<(), ()> {
     replace(RegisteredLanEndpoint::Disabled)
 }
@@ -50,7 +50,7 @@ pub(crate) fn take_lan_endpoint() -> Result<Option<RegisteredLanEndpoint>, ()> {
     Ok(registry.take())
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
 fn replace(endpoint: RegisteredLanEndpoint) -> Result<(), ()> {
     registry().lock().map_err(|_| ())?.replace(endpoint);
     Ok(())

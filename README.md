@@ -23,7 +23,9 @@ Android, iOS, Windows, and macOS through a Flutter UI.
 > unmetered local paths, interface-binding attestation, bounded prompts, and
 > authentication-before-win. Android now transfers an OS-network-bound UDP
 > socket directly from Kotlin to Rust and falls back only to loopback when no
-> eligible unmetered LAN exists; Apple/Windows LAN binding and Direct/Aware
+> eligible unmetered LAN exists. iOS/macOS now bind an IPv4 UDP socket with
+> `IP_BOUND_IF` to an eligible Network.framework Wi-Fi/Ethernet interface and
+> transfer its ownership directly to Rust; Windows LAN binding and Direct/Aware
 > adapters remain pending. Host loopback and host-build checks pass,
 > while physical Android ↔ macOS transfer remains unverified. There is no SDK
 > release or four-platform validation.

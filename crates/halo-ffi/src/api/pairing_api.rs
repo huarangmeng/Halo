@@ -135,9 +135,15 @@ pub fn pairing_start(
         Some(RegisteredLanEndpoint::Disabled) => {
             config = config.with_bind_address("127.0.0.1:0".parse().map_err(core_error)?);
         }
-        None if cfg!(target_os = "android") => {
+        None if cfg!(any(
+            target_os = "android",
+            target_os = "ios",
+            target_os = "macos"
+        )) =>
+        {
             // Fail closed if native preparation did not run or its JNI handoff
-            // failed. Android must never fall back to a wildcard listener.
+            // failed. Mobile and Apple launchers must never fall back to a
+            // wildcard listener.
             config = config.with_bind_address("127.0.0.1:0".parse().map_err(core_error)?);
         }
         None => {}

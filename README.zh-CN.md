@@ -17,8 +17,10 @@ Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Ru
 > Android/macOS 原生文件选择、接收确认和取消流程，文件字节不经过 Dart。通用数据
 > 通道 Broker 已实现非计费本地路径、接口绑定声明、有界系统提示和认证后胜出策略。
 > Android 现在由 Kotlin 将固定到指定 OS Network 的 UDP socket 直接移交 Rust；没有
-> 合格非计费 LAN 时只监听 loopback。Apple/Windows LAN 精确绑定与 Direct/Aware
-> 适配器仍待完成。主机回环与主机构建已通过，但 Android ↔ macOS 真机文件传输仍未验证。
+> 合格非计费 LAN 时只监听 loopback。iOS/macOS 现在使用 `IP_BOUND_IF` 将 IPv4 UDP
+> socket 固定到 Network.framework 选出的合格 Wi-Fi/以太网接口，再直接移交 Rust；
+> Windows LAN 精确绑定与 Direct/Aware 适配器仍待完成。主机回环与主机构建已通过，
+> 但 Android ↔ macOS 真机文件传输仍未验证。
 
 Halo 不是 AirDrop 的实现，也不会尝试逆向 Apple 的私有技术栈。近期目标更小，也
 更容易验证：当两台设备都打开 Halo，并处于彼此可达的同一局域网时，它们能够互相

@@ -5,11 +5,20 @@
 
 use std::{ptr, slice, str};
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+use std::{
+    net::UdpSocket,
+    os::fd::{FromRawFd, OwnedFd},
+};
+
 use crate::{
     HaloApiError, PlatformPairingChannelState, PlatformPairingRole,
     pairing_attach_platform_channel, pairing_close_platform_channel, pairing_drain_platform_frames,
     pairing_platform_channel_state, pairing_submit_platform_frame,
 };
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+use crate::platform_socket::{disable_lan_endpoint, register_bound_lan_socket};
 
 const STATUS_OK: i32 = 0;
 const STATUS_EMPTY: i32 = 1;
@@ -17,6 +26,34 @@ const STATUS_BACKPRESSURE: i32 = 2;
 const ERROR_INVALID_ARGUMENT: i32 = -1;
 const ERROR_NOT_FOUND: i32 = -2;
 const ERROR_INTERNAL: i32 = -3;
+
+/// Takes ownership of a UDP descriptor that Swift already bound to one
+/// eligible Apple LAN interface. Every nonnegative descriptor is consumed,
+/// including when registration fails.
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn halo_apple_lan_register_bound_socket(file_descriptor: i32) -> i32 {
+    if file_descriptor < 0 {
+        return ERROR_INVALID_ARGUMENT;
+    }
+    // SAFETY: Swift passes a newly created descriptor and relinquishes
+    // ownership at this call. OwnedFd guarantees exactly-once close if the
+    // registry rejects it or replaces a stale prepared endpoint.
+    let owned = unsafe { OwnedFd::from_raw_fd(file_descriptor) };
+    match register_bound_lan_socket(UdpSocket::from(owned)) {
+        Ok(()) => STATUS_OK,
+        Err(()) => ERROR_INTERNAL,
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn halo_apple_lan_disable() -> i32 {
+    match disable_lan_endpoint() {
+        Ok(()) => STATUS_OK,
+        Err(()) => ERROR_INTERNAL,
+    }
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn halo_apple_pairing_attach(

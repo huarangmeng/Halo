@@ -134,9 +134,11 @@ sensitive diagnostics.
   ineligible, or fails, Android uses a loopback-only listener rather than a
   wildcard fallback. A default-route change cannot migrate the socket; if the
   selected Android `Network` disappears or becomes ineligible, the UI requires
-  a discovery restart. Apple and Windows LAN sockets
-  still need equivalent exact-interface adapters, and Android's no-cellular
-  guarantee remains a physical-device validation gate.
+  a discovery restart. iOS/macOS now transfer an IPv4 UDP socket only after
+  Swift applies `IP_BOUND_IF` to an eligible, non-expensive, unconstrained
+  Wi-Fi/Ethernet interface; failure registers a loopback-only listener. Apple
+  IPv6 and Windows still need equivalent exact-interface adapters. Every
+  platform's no-cellular guarantee remains a physical-device validation gate.
 - P2P capability depends on OS version, entitlement, hardware, firmware, radio
   coexistence, driver behavior, and system UI. Provider state can change while
   the app is running and must be treated as revocable.

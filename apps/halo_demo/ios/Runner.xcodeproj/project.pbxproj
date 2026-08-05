@@ -17,6 +17,7 @@
 		48414C4F424C45000000000E /* HaloAppleQuicTlsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C45000000000D /* HaloAppleQuicTlsIdentity.swift */; };
 		48414C4F424C450000000010 /* HaloBonjourServiceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C45000000000F /* HaloBonjourServiceResolver.swift */; };
 		48414C4F424C450000000012 /* HaloAppleQuicDataStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C450000000011 /* HaloAppleQuicDataStream.swift */; };
+		48414C4F424C450000000014 /* HaloAppleBoundLanSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C450000000013 /* HaloAppleBoundLanSocket.swift */; };
 		48414C4F424C450000000008 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C450000000007 /* InfoPlist.strings */; };
 		514708A3DD70E5393E40991F /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9DE6CACEE4328186F5BFAE7F /* Pods_RunnerTests.framework */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
@@ -67,6 +68,7 @@
 		48414C4F424C45000000000D /* HaloAppleQuicTlsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloAppleQuicTlsIdentity.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloAppleQuicTlsIdentity.swift; sourceTree = "<group>"; };
 		48414C4F424C45000000000F /* HaloBonjourServiceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloBonjourServiceResolver.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloBonjourServiceResolver.swift; sourceTree = "<group>"; };
 		48414C4F424C450000000011 /* HaloAppleQuicDataStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloAppleQuicDataStream.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloAppleQuicDataStream.swift; sourceTree = "<group>"; };
+		48414C4F424C450000000013 /* HaloAppleBoundLanSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloAppleBoundLanSocket.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloAppleBoundLanSocket.swift; sourceTree = "<group>"; };
 		48414C4F424C450000000005 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		48414C4F424C450000000006 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		686FFCFAB559A8C95B3105FD /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
@@ -168,6 +170,7 @@
 				48414C4F424C45000000000D /* HaloAppleQuicTlsIdentity.swift */,
 				48414C4F424C45000000000F /* HaloBonjourServiceResolver.swift */,
 				48414C4F424C450000000011 /* HaloAppleQuicDataStream.swift */,
+				48414C4F424C450000000013 /* HaloAppleBoundLanSocket.swift */,
 				48414C4F424C450000000003 /* HaloBleBridge.swift */,
 				48414C4F424C450000000007 /* InfoPlist.strings */,
 			);
@@ -426,6 +429,7 @@
 				48414C4F424C45000000000E /* HaloAppleQuicTlsIdentity.swift in Sources */,
 				48414C4F424C450000000010 /* HaloBonjourServiceResolver.swift in Sources */,
 				48414C4F424C450000000012 /* HaloAppleQuicDataStream.swift in Sources */,
+				48414C4F424C450000000014 /* HaloAppleBoundLanSocket.swift in Sources */,
 				48414C4F424C450000000004 /* HaloBleBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
