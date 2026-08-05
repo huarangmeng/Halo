@@ -7,6 +7,39 @@ import 'package:halo_demo/src/rust/api.dart';
 import 'package:halo_demo/src/rust/api/pairing_api.dart';
 
 void main() {
+  test('LAN endpoint is connectable only while the platform path is ready', () {
+    final controller = DiscoveryController(platformOverride: 'android');
+    addTearDown(controller.dispose);
+    final peer = DiscoveryPeer(
+      presenceId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      deviceType: DiscoveryDeviceType.macos,
+      compatible: true,
+      capabilities: BigInt.zero,
+      sources: const ['mdns'],
+      candidateEndpoints: const ['192.0.2.1:4433'],
+      candidateCount: 1,
+      quarantined: false,
+    );
+
+    controller.platformCapabilities = const [
+      PlatformCapabilityStatus(
+        name: 'local_network',
+        state: 'temporarily_unavailable',
+        detail: 'no_local_network_route',
+      ),
+    ];
+    expect(controller.hasConnectablePathFor(peer), isFalse);
+
+    controller.platformCapabilities = const [
+      PlatformCapabilityStatus(
+        name: 'local_network',
+        state: 'ready',
+        detail: 'local_network_connected',
+      ),
+    ];
+    expect(controller.hasConnectablePathFor(peer), isTrue);
+  });
+
   testWidgets('renders the shared discovery screen in English', (tester) async {
     await tester.pumpWidget(const HaloApp());
 
@@ -84,6 +117,11 @@ void main() {
           state: 'temporarily_unavailable',
           detail: 'no_local_network_route',
         ),
+        PlatformCapabilityStatus(
+          name: 'wifi_aware',
+          state: 'stopped',
+          detail: 'wifi_aware_provider_not_implemented',
+        ),
       ]
       ..providerStatuses = const [
         DiscoveryProviderStatus(
@@ -119,6 +157,8 @@ void main() {
     expect(find.textContaining('Bluetooth is turned off'), findsOneWidget);
     expect(find.text('Local network'), findsOneWidget);
     expect(find.textContaining('QUIC pairing cannot connect'), findsOneWidget);
+    expect(find.text('Wi-Fi Aware'), findsOneWidget);
+    expect(find.textContaining('provider is not implemented'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('mdns'),
       300,
@@ -211,5 +251,84 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('shows that a closed authenticated session must reconnect', (
+    tester,
+  ) async {
+    const peerId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    final controller = DiscoveryController(platformOverride: 'android')
+      ..peers = [
+        DiscoveryPeer(
+          presenceId: peerId,
+          deviceType: DiscoveryDeviceType.macos,
+          compatible: true,
+          capabilities: BigInt.zero,
+          sources: const ['mdns'],
+          candidateEndpoints: const ['192.0.2.1:4433'],
+          candidateCount: 1,
+          quarantined: false,
+        ),
+      ]
+      ..pairingActivity = [
+        PairingEvent(
+          eventId: BigInt.one,
+          kind: PairingEventKind.disconnected,
+          peerPresenceId: peerId,
+          peerFingerprint: '12:34:56:78:9A:BC',
+          alreadyTrusted: true,
+          authenticatedSessionId: BigInt.from(7),
+          detail: 'transport_closed',
+        ),
+      ];
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: HaloDiscoveryPage(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Secure connection ended'), findsOneWidget);
+    expect(
+      find.textContaining('Reconnect to start a new authenticated session'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows an incoming authenticated LAN file offer', (tester) async {
+    final controller = DiscoveryController(platformOverride: 'macos')
+      ..transferActivity = [
+        TransferEvent(
+          eventId: BigInt.one,
+          requestId: BigInt.from(9),
+          authenticatedSessionId: BigInt.from(3),
+          transferId: '00112233445566778899aabbccddeeff',
+          direction: TransferDirection.receiving,
+          kind: TransferEventKind.offerReceived,
+          fileName: 'photo.jpg',
+          fileSize: BigInt.from(2048),
+          transferredBytes: BigInt.zero,
+        ),
+      ];
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: HaloDiscoveryPage(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Incoming file'), findsOneWidget);
+    expect(find.text('photo.jpg · 2.00 KiB'), findsOneWidget);
+    expect(find.text('Accept file'), findsOneWidget);
+    expect(find.text('Reject'), findsOneWidget);
+    expect(find.textContaining('BLE carries no file bytes'), findsOneWidget);
   });
 }

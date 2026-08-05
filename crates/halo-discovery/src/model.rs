@@ -267,18 +267,18 @@ pub struct Endpoint {
 impl Endpoint {
     /// Validates and creates a QUIC endpoint.
     pub fn quic(address: SocketAddr) -> Result<Self, DiscoveryError> {
-        if address.port() == 0 || address.ip().is_unspecified() || address.ip().is_multicast() {
-            return Err(DiscoveryError::InvalidConfig(format!(
-                "invalid QUIC endpoint {address}"
-            )));
+        if address.port() == 0 || !is_local_network_ip(address.ip()) {
+            return Err(DiscoveryError::InvalidConfig(
+                "QUIC endpoint is outside Halo's local-network address scope".to_owned(),
+            ));
         }
         if let SocketAddr::V6(address) = address
             && address.ip().is_unicast_link_local()
             && address.scope_id() == 0
         {
-            return Err(DiscoveryError::InvalidConfig(format!(
-                "IPv6 link-local endpoint requires an interface scope: {address}"
-            )));
+            return Err(DiscoveryError::InvalidConfig(
+                "IPv6 link-local endpoint requires an interface scope".to_owned(),
+            ));
         }
         Ok(Self { address })
     }
@@ -291,6 +291,73 @@ impl Endpoint {
     #[must_use]
     pub const fn ip(self) -> IpAddr {
         self.address.ip()
+    }
+}
+
+/// Conservative v1 address policy for nearby transport candidates.
+///
+/// Global addresses remain disabled until the transport can bind a connection
+/// to the LAN interface that supplied the discovery observation. This prevents
+/// an untrusted hint or remembered address from selecting a cellular/public
+/// route.
+#[must_use]
+pub const fn is_local_network_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => {
+            address.is_loopback() || address.is_private() || address.is_link_local()
+        }
+        IpAddr::V6(address) => {
+            address.is_loopback() || address.is_unicast_link_local() || address.is_unique_local()
+        }
+    }
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV6};
+
+    use super::*;
+
+    #[test]
+    fn accepts_conservative_local_addresses() {
+        assert!(Endpoint::quic(SocketAddr::from((Ipv4Addr::LOCALHOST, 4433))).is_ok());
+        assert!(Endpoint::quic(SocketAddr::from(([192, 168, 1, 20], 4433))).is_ok());
+        assert!(Endpoint::quic(SocketAddr::from(([169, 254, 2, 3], 4433))).is_ok());
+        assert!(
+            Endpoint::quic(SocketAddr::from((
+                Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1),
+                4433,
+            )))
+            .is_ok()
+        );
+        assert!(
+            Endpoint::quic(SocketAddr::V6(SocketAddrV6::new(
+                Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1),
+                4433,
+                0,
+                4,
+            )))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_public_and_unscoped_link_local_addresses() {
+        assert!(Endpoint::quic(SocketAddr::from(([8, 8, 8, 8], 4433))).is_err());
+        assert!(
+            Endpoint::quic(SocketAddr::from((
+                Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111),
+                4433,
+            )))
+            .is_err()
+        );
+        assert!(
+            Endpoint::quic(SocketAddr::from((
+                Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1),
+                4433,
+            )))
+            .is_err()
+        );
     }
 }
 

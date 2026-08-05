@@ -7,9 +7,9 @@ import '../api.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `core_error`, `pairing_error`, `pairing_sessions`
+// These functions are ignored because they are not marked as `pub`: `core_error`, `pairing_error`, `pairing_sessions`, `transfer_error`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PairingSession`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<PairingBootstrap> pairingStart({
   Uint8List? identityBlob,
@@ -18,6 +18,11 @@ Future<PairingBootstrap> pairingStart({
   identityBlob: identityBlob,
   trustStoreDirectory: trustStoreDirectory,
 );
+
+Future<PlatformTlsIdentity> pairingCreatePlatformTlsIdentity() => HaloRustLib
+    .instance
+    .api
+    .crateApiPairingApiPairingCreatePlatformTlsIdentity();
 
 Future<void> pairingConnect({
   required BigInt sessionId,
@@ -29,12 +34,66 @@ Future<void> pairingConnect({
   endpoints: endpoints,
 );
 
+Future<BigInt> pairingAttachPlatformChannel({
+  required BigInt sessionId,
+  String? peerPresenceId,
+  required PlatformPairingRole role,
+  required List<int> channelBinding,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingAttachPlatformChannel(
+  sessionId: sessionId,
+  peerPresenceId: peerPresenceId,
+  role: role,
+  channelBinding: channelBinding,
+);
+
+Future<void> pairingSubmitPlatformFrame({
+  required BigInt sessionId,
+  required BigInt channelId,
+  required List<int> frame,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingSubmitPlatformFrame(
+  sessionId: sessionId,
+  channelId: channelId,
+  frame: frame,
+);
+
+Future<List<Uint8List>> pairingDrainPlatformFrames({
+  required BigInt sessionId,
+  required BigInt channelId,
+  required int maximumFrames,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingDrainPlatformFrames(
+  sessionId: sessionId,
+  channelId: channelId,
+  maximumFrames: maximumFrames,
+);
+
+Future<void> pairingClosePlatformChannel({
+  required BigInt sessionId,
+  required BigInt channelId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingClosePlatformChannel(
+  sessionId: sessionId,
+  channelId: channelId,
+);
+
+Future<PlatformPairingChannelState> pairingPlatformChannelState({
+  required BigInt sessionId,
+  required BigInt channelId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingPlatformChannelState(
+  sessionId: sessionId,
+  channelId: channelId,
+);
+
 Future<List<PairingEvent>> pairingEvents({
   required BigInt sessionId,
   required BigInt afterEventId,
 }) => HaloRustLib.instance.api.crateApiPairingApiPairingEvents(
   sessionId: sessionId,
   afterEventId: afterEventId,
+);
+
+Future<List<AuthenticatedSessionInfo>> pairingAuthenticatedSessions({
+  required BigInt sessionId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingAuthenticatedSessions(
+  sessionId: sessionId,
 );
 
 Future<void> pairingRespond({
@@ -47,10 +106,77 @@ Future<void> pairingRespond({
   accepted: accepted,
 );
 
+Future<String> pairingTransferSendFile({
+  required BigInt sessionId,
+  required BigInt authenticatedSessionId,
+  required String sourcePath,
+  String? advertisedName,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferSendFile(
+  sessionId: sessionId,
+  authenticatedSessionId: authenticatedSessionId,
+  sourcePath: sourcePath,
+  advertisedName: advertisedName,
+);
+
+Future<List<TransferEvent>> pairingTransferEvents({
+  required BigInt sessionId,
+  required BigInt afterEventId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferEvents(
+  sessionId: sessionId,
+  afterEventId: afterEventId,
+);
+
+Future<void> pairingTransferRespond({
+  required BigInt sessionId,
+  required BigInt requestId,
+  required bool accepted,
+  String? stagingDirectory,
+  String? destinationDirectory,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferRespond(
+  sessionId: sessionId,
+  requestId: requestId,
+  accepted: accepted,
+  stagingDirectory: stagingDirectory,
+  destinationDirectory: destinationDirectory,
+);
+
+Future<void> pairingTransferCancel({
+  required BigInt sessionId,
+  required String transferId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferCancel(
+  sessionId: sessionId,
+  transferId: transferId,
+);
+
 Future<void> pairingStop({required BigInt sessionId}) => HaloRustLib
     .instance
     .api
     .crateApiPairingApiPairingStop(sessionId: sessionId);
+
+class AuthenticatedSessionInfo {
+  final BigInt sessionId;
+  final String peerFingerprint;
+  final String? peerPresenceId;
+
+  const AuthenticatedSessionInfo({
+    required this.sessionId,
+    required this.peerFingerprint,
+    this.peerPresenceId,
+  });
+
+  @override
+  int get hashCode =>
+      sessionId.hashCode ^ peerFingerprint.hashCode ^ peerPresenceId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AuthenticatedSessionInfo &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          peerFingerprint == other.peerFingerprint &&
+          peerPresenceId == other.peerPresenceId;
+}
 
 class PairingBootstrap {
   final BigInt sessionId;
@@ -88,6 +214,7 @@ class PairingEvent {
   final String? peerFingerprint;
   final String? shortCode;
   final bool alreadyTrusted;
+  final BigInt? authenticatedSessionId;
   final String? detail;
 
   const PairingEvent({
@@ -98,6 +225,7 @@ class PairingEvent {
     this.peerFingerprint,
     this.shortCode,
     required this.alreadyTrusted,
+    this.authenticatedSessionId,
     this.detail,
   });
 
@@ -110,6 +238,7 @@ class PairingEvent {
       peerFingerprint.hashCode ^
       shortCode.hashCode ^
       alreadyTrusted.hashCode ^
+      authenticatedSessionId.hashCode ^
       detail.hashCode;
 
   @override
@@ -124,6 +253,7 @@ class PairingEvent {
           peerFingerprint == other.peerFingerprint &&
           shortCode == other.shortCode &&
           alreadyTrusted == other.alreadyTrusted &&
+          authenticatedSessionId == other.authenticatedSessionId &&
           detail == other.detail;
 }
 
@@ -135,6 +265,103 @@ enum PairingEventKind {
   rejected,
   identityChanged,
   timedOut,
+  cancelled,
+  failed,
+  disconnected,
+}
+
+enum PlatformPairingChannelState { pending, authenticated, failed }
+
+enum PlatformPairingRole { initiator, responder }
+
+class PlatformTlsIdentity {
+  final Uint8List certificateDer;
+  final Uint8List privateKeyX963;
+
+  const PlatformTlsIdentity({
+    required this.certificateDer,
+    required this.privateKeyX963,
+  });
+
+  @override
+  int get hashCode => certificateDer.hashCode ^ privateKeyX963.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlatformTlsIdentity &&
+          runtimeType == other.runtimeType &&
+          certificateDer == other.certificateDer &&
+          privateKeyX963 == other.privateKeyX963;
+}
+
+enum TransferDirection { sending, receiving }
+
+class TransferEvent {
+  final BigInt eventId;
+  final BigInt? requestId;
+  final BigInt authenticatedSessionId;
+  final String transferId;
+  final TransferDirection direction;
+  final TransferEventKind kind;
+  final String fileName;
+  final BigInt fileSize;
+  final BigInt transferredBytes;
+  final String? finalPath;
+  final String? detail;
+
+  const TransferEvent({
+    required this.eventId,
+    this.requestId,
+    required this.authenticatedSessionId,
+    required this.transferId,
+    required this.direction,
+    required this.kind,
+    required this.fileName,
+    required this.fileSize,
+    required this.transferredBytes,
+    this.finalPath,
+    this.detail,
+  });
+
+  @override
+  int get hashCode =>
+      eventId.hashCode ^
+      requestId.hashCode ^
+      authenticatedSessionId.hashCode ^
+      transferId.hashCode ^
+      direction.hashCode ^
+      kind.hashCode ^
+      fileName.hashCode ^
+      fileSize.hashCode ^
+      transferredBytes.hashCode ^
+      finalPath.hashCode ^
+      detail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransferEvent &&
+          runtimeType == other.runtimeType &&
+          eventId == other.eventId &&
+          requestId == other.requestId &&
+          authenticatedSessionId == other.authenticatedSessionId &&
+          transferId == other.transferId &&
+          direction == other.direction &&
+          kind == other.kind &&
+          fileName == other.fileName &&
+          fileSize == other.fileSize &&
+          transferredBytes == other.transferredBytes &&
+          finalPath == other.finalPath &&
+          detail == other.detail;
+}
+
+enum TransferEventKind {
+  offerReceived,
+  awaitingDecision,
+  transferring,
+  completed,
+  rejected,
   cancelled,
   failed,
 }

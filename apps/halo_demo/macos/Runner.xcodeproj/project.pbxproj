@@ -29,6 +29,11 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		48414C4F424C450000000002 /* HaloBleProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C450000000001 /* HaloBleProvider.swift */; };
 		48414C4F424C450000000004 /* HaloBleBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C450000000003 /* HaloBleBridge.swift */; };
+		48414C4F424C45000000000A /* HaloApplePeerToPeerProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C450000000009 /* HaloApplePeerToPeerProvider.swift */; };
+		48414C4F424C45000000000C /* HaloAppleQuicControlChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C45000000000B /* HaloAppleQuicControlChannel.swift */; };
+		48414C4F424C45000000000E /* HaloAppleQuicTlsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C45000000000D /* HaloAppleQuicTlsIdentity.swift */; };
+		48414C4F424C450000000010 /* HaloBonjourServiceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C45000000000F /* HaloBonjourServiceResolver.swift */; };
+		48414C4F424C450000000012 /* HaloAppleQuicDataStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48414C4F424C450000000011 /* HaloAppleQuicDataStream.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		84B4F9655F80C97A9C1B8115 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E32C8B05412E79CA5459A99 /* Pods_Runner.framework */; };
 		B264F26A59478A2B9AFD5F4C /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5536AE083A597A9077B35383 /* Pods_RunnerTests.framework */; };
@@ -83,6 +88,11 @@
 		33E5194F232828860026EE4D /* AppInfo.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppInfo.xcconfig; sourceTree = "<group>"; };
 		48414C4F424C450000000001 /* HaloBleProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloBleProvider.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloBleProvider.swift; sourceTree = "<group>"; };
 		48414C4F424C450000000003 /* HaloBleBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloBleBridge.swift; path = ../../apple/HaloBleBridge.swift; sourceTree = "<group>"; };
+		48414C4F424C450000000009 /* HaloApplePeerToPeerProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloApplePeerToPeerProvider.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloApplePeerToPeerProvider.swift; sourceTree = "<group>"; };
+		48414C4F424C45000000000B /* HaloAppleQuicControlChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloAppleQuicControlChannel.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloAppleQuicControlChannel.swift; sourceTree = "<group>"; };
+		48414C4F424C45000000000D /* HaloAppleQuicTlsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloAppleQuicTlsIdentity.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloAppleQuicTlsIdentity.swift; sourceTree = "<group>"; };
+		48414C4F424C45000000000F /* HaloBonjourServiceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloBonjourServiceResolver.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloBonjourServiceResolver.swift; sourceTree = "<group>"; };
+		48414C4F424C450000000011 /* HaloAppleQuicDataStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HaloAppleQuicDataStream.swift; path = ../../../../platform/apple/Sources/HaloDiscoveryApple/HaloAppleQuicDataStream.swift; sourceTree = "<group>"; };
 		4E32C8B05412E79CA5459A99 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		5536AE083A597A9077B35383 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		6467491A8E81C30AE8921B32 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
@@ -186,6 +196,11 @@
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				48414C4F424C450000000001 /* HaloBleProvider.swift */,
+				48414C4F424C450000000009 /* HaloApplePeerToPeerProvider.swift */,
+				48414C4F424C45000000000B /* HaloAppleQuicControlChannel.swift */,
+				48414C4F424C45000000000D /* HaloAppleQuicTlsIdentity.swift */,
+				48414C4F424C45000000000F /* HaloBonjourServiceResolver.swift */,
+				48414C4F424C450000000011 /* HaloAppleQuicDataStream.swift */,
 				48414C4F424C450000000003 /* HaloBleBridge.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
@@ -455,6 +470,11 @@
 			files = (
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				48414C4F424C450000000002 /* HaloBleProvider.swift in Sources */,
+				48414C4F424C45000000000A /* HaloApplePeerToPeerProvider.swift in Sources */,
+				48414C4F424C45000000000C /* HaloAppleQuicControlChannel.swift in Sources */,
+				48414C4F424C45000000000E /* HaloAppleQuicTlsIdentity.swift in Sources */,
+				48414C4F424C450000000010 /* HaloBonjourServiceResolver.swift in Sources */,
+				48414C4F424C450000000012 /* HaloAppleQuicDataStream.swift in Sources */,
 				48414C4F424C450000000004 /* HaloBleBridge.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,

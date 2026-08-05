@@ -8,8 +8,14 @@ Rust discovery core。BLE 原生代码只负责调用系统蓝牙 API 和搬运�
 
 - 已实现：Flutter UI、Rust FFI、BLE 扫描/广播/GATT、mDNS、IPv4/IPv6 Presence 与
   IPv4 定向广播并行探测。
-- 已接入但待真机验证：经过认证的 QUIC 连接、短码配对、可信设备持久化。
-- 未实现：文件传输。
+- 已接入但待真机验证：经过认证的 QUIC 连接、短码配对、可信设备持久化，以及配对后
+  保留的 LAN QUIC 会话。
+- Android 已在启动时把 UDP socket 固定到当前非计费 Wi-Fi/以太网 `Network`，再通过
+  JNI 直接把 FD 所有权交给 Rust；无合格网络或绑定失败时仅建立 loopback listener。
+  此路径已通过主机构建，尚未通过本节真机矩阵。
+- 已实现 Rust 单文件传输核心、配对后数据 stream、Flutter 发送/接收确认界面，以及
+  Android 文档选择器和 macOS 文件面板。主机回环端到端测试与两端 Debug 编译已通过；
+  Android ↔ macOS 真机文件传输仍待验证，不能据此标记为已支持。
 - 模拟器不能作为 BLE 互通证据；此流程需要一台支持 BLE 的 Android 真机。
 - 当前代码只承诺应用前台运行，不承诺后台发现。
 
@@ -77,9 +83,16 @@ Android 17 还会请求本地网络访问。macOS 首次使用时需要批准蓝
    各出现一条重复记录。
 4. 关闭其中一端或点击停止后，另一端的记录会在 Rust TTL 到期后消失。
 5. 关闭蓝牙后 LAN 探测仍继续；断开局域网后 BLE 仍独立工作并报告状态。
+6. Android 的 `local_network` 详情为 `local_network_socket_bound` 后才允许 LAN 配对；
+   所选 Wi-Fi 消失或变为计费网络后必须显示需要重启或不可用，旧 QUIC 会话不能迁移到
+   新路由；仅改变系统默认路由也不能把已绑定 socket 移到蜂窝或 VPN。
 
 这部分只定义发现互通标准；配对真机标准见
-[`android-macos-pairing.md`](android-macos-pairing.md)，文件传输尚未实现。
+[`android-macos-pairing.md`](android-macos-pairing.md)。配对通过后，可继续执行文件传输
+真机验收：发送端点击“发送文件”并选择一个普通文件；接收端核对文件名和大小后明确
+接受；两端必须显示完成，接收文件必须位于 UI 展示的应用私有目录且内容摘要一致。
+再分别验证拒绝、取消、同名目标已存在、传输中断和 Wi-Fi 断开；任何失败都不能覆盖
+已有文件或残留 `.part` 文件。完成这些记录前，端到端传输状态仍是“待真机验证”。
 
 ## 常见问题
 

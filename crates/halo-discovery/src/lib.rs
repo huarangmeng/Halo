@@ -21,6 +21,6 @@ pub use manager::{DiscoveryHandle, DiscoveryManager, DiscoverySession};
 pub use model::{
     Capabilities, ConnectionFailure, ConnectionOutcome, DeviceType, DiscoveryConfig,
     DiscoveryEvent, Endpoint, EndpointCandidate, LocalPresence, Observation, PeerSnapshot,
-    PresenceId, ProtocolRange, ProviderId, ProviderKind, ProviderState,
+    PresenceId, ProtocolRange, ProviderId, ProviderKind, ProviderState, is_local_network_ip,
 };
 pub use provider::{DiscoveryProvider, ProviderContext};

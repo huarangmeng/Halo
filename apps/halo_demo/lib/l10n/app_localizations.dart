@@ -296,6 +296,12 @@ abstract class AppLocalizations {
   /// **'Secure pairing failed'**
   String get pairingFailed;
 
+  /// No description provided for @pairingDisconnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure connection ended'**
+  String get pairingDisconnected;
+
   /// No description provided for @pairingAccept.
   ///
   /// In en, this message translates to:
@@ -386,6 +392,18 @@ abstract class AppLocalizations {
   /// **'An internal connection task failed.'**
   String get connectionFailureInternal;
 
+  /// No description provided for @connectionSessionClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'The authenticated transport closed. Reconnect to start a new authenticated session.'**
+  String get connectionSessionClosed;
+
+  /// No description provided for @connectionRetryRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait briefly before retrying this device.'**
+  String get connectionRetryRateLimited;
+
   /// No description provided for @connectionFailureUnknown.
   ///
   /// In en, this message translates to:
@@ -439,6 +457,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Local network'**
   String get capabilityLocalNetwork;
+
+  /// No description provided for @capabilityApplePeerToPeer.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple peer-to-peer Wi-Fi'**
+  String get capabilityApplePeerToPeer;
+
+  /// No description provided for @capabilityWifiDirect.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi Direct'**
+  String get capabilityWifiDirect;
+
+  /// No description provided for @capabilityWifiAware.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi Aware'**
+  String get capabilityWifiAware;
 
   /// No description provided for @capabilityBackground.
   ///
@@ -530,6 +566,42 @@ abstract class AppLocalizations {
   /// **'A local-network route is available.'**
   String get capabilityLocalNetworkConnected;
 
+  /// No description provided for @capabilityLocalNetworkSocketBound.
+  ///
+  /// In en, this message translates to:
+  /// **'QUIC is pinned to the current unmetered local network.'**
+  String get capabilityLocalNetworkSocketBound;
+
+  /// No description provided for @capabilityLocalNetworkMetered.
+  ///
+  /// In en, this message translates to:
+  /// **'The current local network is metered; nearby mode will not use it for transfer.'**
+  String get capabilityLocalNetworkMetered;
+
+  /// No description provided for @capabilityLocalNetworkVpn.
+  ///
+  /// In en, this message translates to:
+  /// **'The active local route includes a VPN; nearby mode will not use it.'**
+  String get capabilityLocalNetworkVpn;
+
+  /// No description provided for @capabilityLocalNetworkBindingFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The local-network socket could not be pinned safely.'**
+  String get capabilityLocalNetworkBindingFailed;
+
+  /// No description provided for @capabilityLocalNetworkNotPrepared.
+  ///
+  /// In en, this message translates to:
+  /// **'The local-network socket has not been prepared yet.'**
+  String get capabilityLocalNetworkNotPrepared;
+
+  /// No description provided for @capabilityLocalNetworkRestartRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'The local network changed; restart discovery to bind a new QUIC socket.'**
+  String get capabilityLocalNetworkRestartRequired;
+
   /// No description provided for @capabilityEthernetConnected.
   ///
   /// In en, this message translates to:
@@ -547,6 +619,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Local-network permission has not been granted.'**
   String get capabilityLocalNetworkPermissionRequired;
+
+  /// No description provided for @capabilityAppleP2PStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple peer-to-peer Wi-Fi is starting.'**
+  String get capabilityAppleP2PStarting;
+
+  /// No description provided for @capabilityAppleP2PReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple peer-to-peer Wi-Fi is ready and restricted to non-cellular Wi-Fi paths.'**
+  String get capabilityAppleP2PReady;
+
+  /// No description provided for @capabilityAppleP2PUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple peer-to-peer Wi-Fi is temporarily unavailable on this device or network state.'**
+  String get capabilityAppleP2PUnavailable;
+
+  /// No description provided for @capabilityAppleP2PFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple peer-to-peer Wi-Fi failed; LAN discovery and transfer remain available.'**
+  String get capabilityAppleP2PFailed;
+
+  /// No description provided for @capabilityAppleP2PStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple peer-to-peer Wi-Fi is stopped.'**
+  String get capabilityAppleP2PStopped;
+
+  /// No description provided for @capabilityAppleP2PIdentityFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple peer-to-peer Wi-Fi could not create its temporary encrypted transport identity.'**
+  String get capabilityAppleP2PIdentityFailed;
+
+  /// No description provided for @capabilityDirectProviderPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Platform support was detected, but the Halo provider is not implemented yet.'**
+  String get capabilityDirectProviderPending;
+
+  /// No description provided for @capabilityDirectUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This platform or device does not expose this direct channel.'**
+  String get capabilityDirectUnsupported;
+
+  /// No description provided for @capabilityWifiAwareUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi Aware is currently unavailable.'**
+  String get capabilityWifiAwareUnavailable;
+
+  /// No description provided for @capabilityWifiAwarePermissionRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi Aware permission or entitlement is required.'**
+  String get capabilityWifiAwarePermissionRequired;
 
   /// No description provided for @capabilityBackgroundRunning.
   ///
@@ -823,6 +955,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'IPv6 Presence'**
   String get providerPresenceV6;
+
+  /// No description provided for @transferIncomingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming file'**
+  String get transferIncomingTitle;
+
+  /// No description provided for @transferOfferDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} · {size}'**
+  String transferOfferDescription(String name, String size);
+
+  /// No description provided for @transferAccept.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept file'**
+  String get transferAccept;
+
+  /// No description provided for @transferReject.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject'**
+  String get transferReject;
+
+  /// No description provided for @transferSendFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Send file'**
+  String get transferSendFile;
+
+  /// No description provided for @transferLanOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Files use the authenticated local QUIC connection; BLE carries no file bytes.'**
+  String get transferLanOnly;
+
+  /// No description provided for @transferAwaitingDecision.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the receiver'**
+  String get transferAwaitingDecision;
+
+  /// No description provided for @transferTransferring.
+  ///
+  /// In en, this message translates to:
+  /// **'Transferring'**
+  String get transferTransferring;
+
+  /// No description provided for @transferCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer complete'**
+  String get transferCompleted;
+
+  /// No description provided for @transferRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer rejected'**
+  String get transferRejected;
+
+  /// No description provided for @transferCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer cancelled'**
+  String get transferCancelled;
+
+  /// No description provided for @transferFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer failed'**
+  String get transferFailed;
+
+  /// No description provided for @transferCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel transfer'**
+  String get transferCancel;
+
+  /// No description provided for @transferReceivedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved in private app storage: {path}'**
+  String transferReceivedAt(String path);
 }
 
 class _AppLocalizationsDelegate

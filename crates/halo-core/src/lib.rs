@@ -7,11 +7,17 @@
 
 mod discovery;
 mod pairing;
+mod transfer;
 
 pub use discovery::{
     DeviceType, DiscoveryConfig, DiscoveryError, DiscoveryPeer, DiscoveryProviderStatus,
     DiscoveryService, DiscoveryStartup, PlatformProviderState,
 };
 pub use pairing::{
-    PairingConfig, PairingError, PairingEvent, PairingEventKind, PairingService, PairingStartup,
+    AuthenticatedSessionInfo, PairingConfig, PairingError, PairingEvent, PairingEventKind,
+    PairingPolicy, PairingService, PairingStartup, PlatformPairingChannelState,
+    PlatformPairingRole, PlatformTlsIdentity, create_platform_tls_identity,
+};
+pub use transfer::{
+    TransferDirection, TransferEvent, TransferEventKind, TransferPolicy, TransferServiceError,
 };

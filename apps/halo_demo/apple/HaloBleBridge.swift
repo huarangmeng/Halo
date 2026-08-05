@@ -2,23 +2,31 @@ import CoreBluetooth
 import Foundation
 import Network
 import Security
+import halo_ffi
 
 #if os(macOS)
+import AppKit
 import FlutterMacOS
 #else
 import Flutter
 #endif
 
-/// Shared Flutter-to-CoreBluetooth bridge for the iOS and macOS launchers.
+/// Shared Flutter-to-Apple-networking bridge for the iOS and macOS launchers.
 ///
-/// The bridge only manages platform lifecycle and forwards opaque Presence
-/// bytes. Rust remains the sole parser and discovery state owner.
+/// The bridge manages platform lifecycle, forwards opaque BLE Presence bytes,
+/// and joins native Apple QUIC streams directly to Rust. Dart never receives
+/// exporter material, control frames, or file bytes.
 final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   private let methodChannel: FlutterMethodChannel
   private let identityChannel: FlutterMethodChannel
   private let eventChannel: FlutterEventChannel
   private var eventSink: FlutterEventSink?
   private var provider: HaloBleProvider?
+  private var applePeerToPeerProvider: HaloApplePeerToPeerProvider?
+  private var applePeerToPeerChannels: [UUID: HaloAppleQuicControlChannel] = [:]
+  private var applePeerToPeerDataStreams: [UUID: HaloAppleQuicDataStream] = [:]
+  private var applePeerToPeerPairingTasks: [UUID: Task<Void, Never>] = [:]
+  private var pairingSessionID: UInt64?
   private var providerGeneration: UInt64 = 0
   private let pathMonitor = NWPathMonitor()
   private let pathMonitorQueue = DispatchQueue(label: "org.halo.network-status")
@@ -27,6 +35,8 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   private var wifiDetail = "wifi_not_connected"
   private var localNetworkState = "temporarily_unavailable"
   private var localNetworkDetail = "no_local_network_route"
+  private var applePeerToPeerState = "stopped"
+  private var applePeerToPeerDetail = "apple_p2p_stopped"
 
   init(messenger: FlutterBinaryMessenger) {
     methodChannel = FlutterMethodChannel(
@@ -61,6 +71,12 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     pathMonitor.cancel()
     providerGeneration &+= 1
     provider?.stopAndWait()
+    applePeerToPeerProvider?.stopAndWait()
+    let channels = applePeerToPeerChannels.values
+    Task { for channel in channels { await channel.close() } }
+    for task in applePeerToPeerPairingTasks.values { task.cancel() }
+    let dataStreams = applePeerToPeerDataStreams.values
+    Task { for stream in dataStreams { await stream.close() } }
   }
 
   func onListen(
@@ -111,6 +127,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
           wakeLanHandler: { _ in 1 }
         )
         provider?.start()
+        startApplePeerToPeer(call, generation: generation)
         result(nil)
       } catch {
         result(FlutterError(
@@ -142,7 +159,31 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       providerGeneration &+= 1
       provider?.stopAndWait()
       provider = nil
+      stopApplePeerToPeer()
       result(nil)
+    case "connectApplePeerToPeer":
+      guard let candidateHandle = uuidArgument(call, key: "candidateHandle"),
+            let linkHandle = applePeerToPeerProvider?.connect(candidateHandle: candidateHandle)
+      else {
+        result(FlutterError(
+          code: "apple-p2p-candidate-unavailable",
+          message: "The Apple P2P candidate is no longer available",
+          details: nil
+        ))
+        return
+      }
+      result(linkHandle.uuidString)
+    case "applePeerToPeerClose":
+      guard let handle = uuidArgument(call, key: "linkHandle") else {
+        result(FlutterError(code: "apple-p2p-invalid-link", message: nil, details: nil))
+        return
+      }
+      let channel = applePeerToPeerChannels.removeValue(forKey: handle)
+      applePeerToPeerProvider?.cancelConnection(handle: handle)
+      Task {
+        if let channel { await channel.close() }
+        await MainActor.run { result(nil) }
+      }
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -159,7 +200,292 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     return typedData.data
   }
 
+  private func dataArgument(_ call: FlutterMethodCall, key: String) -> Data? {
+    guard let arguments = call.arguments as? [String: Any],
+          let typedData = arguments[key] as? FlutterStandardTypedData
+    else {
+      return nil
+    }
+    return typedData.data
+  }
+
+  private func uuidArgument(_ call: FlutterMethodCall, key: String) -> UUID? {
+    guard let arguments = call.arguments as? [String: Any],
+          let value = arguments[key] as? String
+    else {
+      return nil
+    }
+    return UUID(uuidString: value)
+  }
+
+  private func startApplePeerToPeer(_ call: FlutterMethodCall, generation: UInt64) {
+    do {
+      guard let arguments = call.arguments as? [String: Any],
+            let instanceName = arguments["p2pInstanceName"] as? String,
+            let pairingSessionNumber = arguments["pairingSessionId"] as? NSNumber,
+            pairingSessionNumber.uint64Value != 0,
+            let certificate = dataArgument(call, key: "platformTlsCertificateDer"),
+            let privateKey = dataArgument(call, key: "platformTlsPrivateKeyX963")
+      else {
+        throw HaloAppleQuicTlsIdentityError.invalidCertificate
+      }
+      let identity = try HaloAppleQuicTlsIdentity(
+        certificateDER: certificate,
+        privateKeyX963: privateKey
+      )
+      let configuration = try HaloApplePeerToPeerConfiguration(instanceName: instanceName)
+      pairingSessionID = pairingSessionNumber.uint64Value
+      applePeerToPeerProvider?.stopAndWait()
+      let p2pProvider = HaloApplePeerToPeerProvider(
+        configuration: configuration,
+        parametersFactory: {
+          HaloApplePeerToPeerNetworkPolicy.makeQuicParameters { options in
+            identity.configure(options)
+          }
+        },
+        eventHandler: { [weak self] event in
+          self?.emitApplePeerToPeer(event, generation: generation)
+        }
+      )
+      applePeerToPeerProvider = p2pProvider
+      p2pProvider.start()
+    } catch {
+      applePeerToPeerState = "failed"
+      applePeerToPeerDetail = "apple_p2p_identity_failed"
+      emitPayload([
+        "type": "data_channel_state",
+        "kind": "apple_peer_to_peer",
+        "state": "failed",
+        "detail": applePeerToPeerDetail,
+      ], generation: generation)
+    }
+  }
+
+  private func stopApplePeerToPeer() {
+    applePeerToPeerProvider?.stopAndWait()
+    applePeerToPeerProvider = nil
+    let channels = applePeerToPeerChannels.values
+    applePeerToPeerChannels.removeAll(keepingCapacity: false)
+    for task in applePeerToPeerPairingTasks.values { task.cancel() }
+    applePeerToPeerPairingTasks.removeAll(keepingCapacity: false)
+    Task { for channel in channels { await channel.close() } }
+    let dataStreams = applePeerToPeerDataStreams.values
+    applePeerToPeerDataStreams.removeAll(keepingCapacity: false)
+    Task { for stream in dataStreams { await stream.close() } }
+    pairingSessionID = nil
+    applePeerToPeerState = "stopped"
+    applePeerToPeerDetail = "apple_p2p_stopped"
+  }
+
+  private func emitApplePeerToPeer(
+    _ event: HaloApplePeerToPeerEvent,
+    generation: UInt64
+  ) {
+    switch event {
+    case .state(let state):
+      let stateName = applePeerToPeerStateName(state)
+      emitPayload([
+        "type": "data_channel_state",
+        "kind": "apple_peer_to_peer",
+        "state": stateName,
+        "detail": "apple_p2p_\(stateName)",
+      ], generation: generation) { [weak self] in
+        self?.applePeerToPeerState = stateName
+        self?.applePeerToPeerDetail = "apple_p2p_\(stateName)"
+      }
+    case .candidateFound(let handle, let peerPresenceID):
+      emitPayload([
+        "type": "data_channel_candidate",
+        "kind": "apple_peer_to_peer",
+        "action": "found",
+        "handle": handle.uuidString,
+        "peerPresenceId": peerPresenceID.uuidString.lowercased(),
+      ], generation: generation)
+    case .candidateLost(let handle, let peerPresenceID):
+      emitPayload([
+        "type": "data_channel_candidate",
+        "kind": "apple_peer_to_peer",
+        "action": "lost",
+        "handle": handle.uuidString,
+        "peerPresenceId": peerPresenceID.uuidString.lowercased(),
+      ], generation: generation)
+    case .linkReady(let handle, let direction, let peerPresenceID):
+      do {
+        guard let sessionID = pairingSessionID,
+              let channel = try applePeerToPeerProvider?.takeControlChannel(handle: handle)
+        else { throw HaloAppleQuicControlError.closed }
+        var payload: [String: Any] = [
+          "type": "data_channel_link_ready",
+          "kind": "apple_peer_to_peer",
+          "handle": handle.uuidString,
+          "direction": direction.rawValue,
+        ]
+        if let peerPresenceID {
+          payload["peerPresenceId"] = peerPresenceID.uuidString.lowercased()
+        }
+        emitPayload(payload, generation: generation) { [weak self] in
+          self?.startApplePeerToPeerPairing(
+            handle: handle,
+            channel: channel,
+            sessionID: sessionID,
+            direction: direction,
+            peerPresenceID: peerPresenceID,
+            generation: generation
+          )
+        }
+      } catch {
+        emitPayload([
+          "type": "diagnostic",
+          "operation": "apple_peer_to_peer",
+          "detail": "control_channel_unavailable",
+        ], generation: generation)
+      }
+    case .linkFailed(let handle, let failure):
+      emitPayload([
+        "type": "data_channel_link_failed",
+        "kind": "apple_peer_to_peer",
+        "handle": handle.uuidString,
+        "detail": failure.rawValue,
+      ], generation: generation)
+    case .dataStreamReady(let handle, let sessionHandle, let direction):
+      do {
+        guard let stream = try applePeerToPeerProvider?.takeDataStream(handle: handle)
+        else { throw HaloAppleQuicDataError.closed }
+        emitPayload([
+          "type": "data_channel_stream_ready",
+          "kind": "apple_peer_to_peer",
+          "handle": handle.uuidString,
+          "sessionHandle": sessionHandle.uuidString,
+          "direction": direction.rawValue,
+        ], generation: generation) { [weak self] in
+          self?.applePeerToPeerDataStreams[handle] = stream
+        }
+      } catch {
+        emitPayload([
+          "type": "diagnostic",
+          "operation": "apple_peer_to_peer_data",
+          "detail": "data_stream_unavailable",
+        ], generation: generation)
+      }
+    case .dataStreamFailed(let handle, let failure):
+      emitPayload([
+        "type": "data_channel_stream_failed",
+        "kind": "apple_peer_to_peer",
+        "handle": handle.uuidString,
+        "detail": failure.rawValue,
+      ], generation: generation)
+    case .diagnostic(let failure):
+      emitPayload([
+        "type": "diagnostic",
+        "operation": "apple_peer_to_peer",
+        "detail": failure.rawValue,
+      ], generation: generation)
+    }
+  }
+
+  private func startApplePeerToPeerPairing(
+    handle: UUID,
+    channel: HaloAppleQuicControlChannel,
+    sessionID: UInt64,
+    direction: HaloApplePeerToPeerDirection,
+    peerPresenceID: UUID?,
+    generation: UInt64
+  ) {
+    guard applePeerToPeerPairingTasks[handle] == nil else { return }
+    applePeerToPeerChannels[handle] = channel
+    applePeerToPeerPairingTasks[handle] = Task { [weak self] in
+      let outcome = await haloRunApplePairingBridge(
+        sessionID: sessionID,
+        channel: channel,
+        direction: direction,
+        peerPresenceID: peerPresenceID
+      )
+      await channel.close()
+      await MainActor.run { [weak self] in
+        guard let self else { return }
+        applePeerToPeerPairingTasks.removeValue(forKey: handle)
+        applePeerToPeerChannels.removeValue(forKey: handle)
+        let authenticated = outcome == .authenticated
+          && pairingSessionID == sessionID
+          && generation == providerGeneration
+        applePeerToPeerProvider?.finishPairing(
+          handle: handle,
+          authenticated: authenticated,
+          channelBinding: authenticated ? channel.channelBinding : nil
+        )
+        if authenticated {
+          emitPayload([
+            "type": "data_channel_session_ready",
+            "kind": "apple_peer_to_peer",
+            "handle": handle.uuidString,
+          ], generation: generation)
+        } else if outcome != .cancelled {
+          emitPayload([
+            "type": "diagnostic",
+            "operation": "apple_peer_to_peer",
+            "detail": "native_pairing_bridge_failed",
+          ], generation: generation)
+        }
+      }
+    }
+  }
+
+  private func emitPayload(
+    _ payload: [String: Any],
+    generation: UInt64,
+    beforeEmit: (@Sendable () -> Void)? = nil
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, generation == providerGeneration else { return }
+      beforeEmit?()
+      eventSink?(payload)
+    }
+  }
+
+  private func applePeerToPeerStateName(_ state: HaloApplePeerToPeerState) -> String {
+    switch state {
+    case .starting: "starting"
+    case .ready: "ready"
+    case .temporarilyUnavailable: "temporarily_unavailable"
+    case .failed: "failed"
+    case .stopped: "stopped"
+    }
+  }
+
   private func handleIdentity(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "transferDirectories" {
+      do {
+        result(try transferDirectories())
+      } catch {
+        result(FlutterError(
+          code: "transfer-storage",
+          message: "Private transfer storage is unavailable",
+          details: nil
+        ))
+      }
+      return
+    }
+    if call.method == "pickTransferFile" {
+      pickTransferFile(result: result)
+      return
+    }
+    if call.method == "discardTransferSource" {
+      do {
+        guard let arguments = call.arguments as? [String: Any],
+              let path = arguments["path"] as? String else {
+          throw CocoaError(.fileNoSuchFile)
+        }
+        try discardTransferSource(path: path)
+        result(nil)
+      } catch {
+        result(FlutterError(
+          code: "transfer-storage",
+          message: "Private transfer source could not be removed",
+          details: nil
+        ))
+      }
+      return
+    }
     do {
       switch call.method {
       case "load":
@@ -274,6 +600,97 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       .appendingPathComponent("halo-trust-v1", isDirectory: true)
   }
 
+  private func transferRootDirectory() throws -> URL {
+    guard let applicationSupport = FileManager.default.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first else {
+      throw HaloIdentityStorageError.failed(errSecNotAvailable)
+    }
+    return applicationSupport
+      .appendingPathComponent(Bundle.main.bundleIdentifier ?? "org.halo", isDirectory: true)
+      .appendingPathComponent("halo-transfer-v1", isDirectory: true)
+  }
+
+  private func transferDirectories() throws -> [String: String] {
+    let root = try transferRootDirectory()
+    let staging = root.appendingPathComponent("staging", isDirectory: true)
+    let destination = root.appendingPathComponent("received", isDirectory: true)
+    let outgoing = root.appendingPathComponent("outgoing", isDirectory: true)
+    for directory in [staging, destination, outgoing] {
+      try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true
+      )
+    }
+    return ["staging": staging.path, "destination": destination.path]
+  }
+
+  private func pickTransferFile(result: @escaping FlutterResult) {
+    #if os(macOS)
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.begin { [weak self] response in
+      guard response == .OK, let source = panel.url else {
+        result(nil)
+        return
+      }
+      guard let self else {
+        result(FlutterError(code: "transfer-storage", message: nil, details: nil))
+        return
+      }
+      let accessed = source.startAccessingSecurityScopedResource()
+      defer { if accessed { source.stopAccessingSecurityScopedResource() } }
+      do {
+        let values = try source.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true,
+              Int64(values.fileSize ?? 0) <= 10 * 1024 * 1024 * 1024 * 1024 else {
+          throw CocoaError(.fileReadTooLarge)
+        }
+        let root = try transferRootDirectory()
+        let outgoing = root.appendingPathComponent("outgoing", isDirectory: true)
+        try FileManager.default.createDirectory(
+          at: outgoing,
+          withIntermediateDirectories: true
+        )
+        let destination = outgoing
+          .appendingPathComponent(UUID().uuidString)
+          .appendingPathExtension("upload")
+        try FileManager.default.copyItem(at: source, to: destination)
+        result(["path": destination.path, "name": source.lastPathComponent])
+      } catch {
+        result(FlutterError(
+          code: "transfer-file-copy",
+          message: "Selected file could not be copied into private transfer storage",
+          details: nil
+        ))
+      }
+    }
+    #else
+    result(FlutterError(
+      code: "file-picker-unavailable",
+      message: "The iOS document picker is not connected yet",
+      details: nil
+    ))
+    #endif
+  }
+
+  private func discardTransferSource(path: String) throws {
+    let outgoing = try transferRootDirectory()
+      .appendingPathComponent("outgoing", isDirectory: true)
+      .standardizedFileURL
+    let candidate = URL(fileURLWithPath: path).standardizedFileURL
+    guard candidate.deletingLastPathComponent() == outgoing,
+          candidate.pathExtension == "upload" else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+    if FileManager.default.fileExists(atPath: candidate.path) {
+      try FileManager.default.removeItem(at: candidate)
+    }
+  }
+
   private func emit(_ event: HaloBleEvent, generation: UInt64) {
     let payload: [String: Any]
     switch event {
@@ -372,8 +789,26 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       bluetooth,
       capability("wifi", wifiState, wifiDetail),
       capability("local_network", localNetworkState, localNetworkDetail),
+      capability(
+        "apple_peer_to_peer",
+        applePeerToPeerState,
+        applePeerToPeerDetail
+      ),
+      capability("wifi_direct", "unsupported", "wifi_direct_unsupported_on_apple"),
+      wifiAwareCapability(),
       background,
     ]
+  }
+
+  private func wifiAwareCapability() -> [String: String] {
+    #if os(iOS)
+    if #available(iOS 26.0, *) {
+      return capability("wifi_aware", "stopped", "wifi_aware_provider_not_implemented")
+    }
+    return capability("wifi_aware", "unsupported", "wifi_aware_os_unsupported")
+    #else
+    return capability("wifi_aware", "unsupported", "wifi_aware_unsupported_on_macos")
+    #endif
   }
 
   private func updateNetworkState(_ path: NWPath) {
@@ -405,6 +840,186 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   private func capability(_ name: String, _ state: String, _ detail: String) -> [String: String] {
     ["name": name, "state": state, "detail": detail]
   }
+}
+
+private enum HaloAppleNativePairingOutcome: Equatable {
+  case authenticated
+  case failed
+  case cancelled
+}
+
+private let haloAppleNativeStatusOK: Int32 = 0
+private let haloAppleNativeStatusEmpty: Int32 = 1
+private let haloAppleNativeStatusBackpressure: Int32 = 2
+
+/// Pumps one native QUIC control stream directly into the Rust pairing
+/// mailbox. The C ABI copies complete bounded frames synchronously and retains
+/// no Swift pointers.
+private func haloRunApplePairingBridge(
+  sessionID: UInt64,
+  channel: HaloAppleQuicControlChannel,
+  direction: HaloApplePeerToPeerDirection,
+  peerPresenceID: UUID?
+) async -> HaloAppleNativePairingOutcome {
+  let peerBytes = peerPresenceID.map {
+    Data($0.uuidString.lowercased().utf8)
+  } ?? Data()
+  let binding = channel.channelBinding
+  var channelID: UInt64 = 0
+  let attachStatus = peerBytes.withUnsafeBytes { peerBuffer in
+    binding.withUnsafeBytes { bindingBuffer in
+      halo_apple_pairing_attach(
+        sessionID,
+        peerBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+        peerBuffer.count,
+        direction == .outgoing ? 0 : 1,
+        bindingBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+        bindingBuffer.count,
+        &channelID
+      )
+    }
+  }
+  guard attachStatus == haloAppleNativeStatusOK, channelID != 0 else {
+    return .failed
+  }
+  defer { _ = halo_apple_pairing_close(sessionID, channelID) }
+
+  return await withTaskGroup(of: HaloAppleNativePairingOutcome.self) { group in
+    group.addTask {
+      await haloPumpApplePairingInbound(
+        sessionID: sessionID,
+        channelID: channelID,
+        channel: channel
+      )
+    }
+    group.addTask {
+      await haloPumpApplePairingOutbound(
+        sessionID: sessionID,
+        channelID: channelID,
+        channel: channel
+      )
+    }
+    let outcome = await group.next() ?? .failed
+    await channel.close()
+    group.cancelAll()
+    return outcome
+  }
+}
+
+private func haloPumpApplePairingInbound(
+  sessionID: UInt64,
+  channelID: UInt64,
+  channel: HaloAppleQuicControlChannel
+) async -> HaloAppleNativePairingOutcome {
+  do {
+    while !Task.isCancelled {
+      let frame = try await channel.receiveFrame()
+      var status = frame.withUnsafeBytes { frameBuffer in
+        halo_apple_pairing_submit(
+          sessionID,
+          channelID,
+          frameBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+          frameBuffer.count
+        )
+      }
+      while status == haloAppleNativeStatusBackpressure, !Task.isCancelled {
+        try await Task.sleep(nanoseconds: 20_000_000)
+        status = frame.withUnsafeBytes { frameBuffer in
+          halo_apple_pairing_submit(
+            sessionID,
+            channelID,
+            frameBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+            frameBuffer.count
+          )
+        }
+      }
+      guard status == haloAppleNativeStatusOK else {
+        return haloApplePairingState(sessionID: sessionID, channelID: channelID)
+      }
+    }
+    return .cancelled
+  } catch is CancellationError {
+    return .cancelled
+  } catch {
+    return await haloApplePairingStateAfterIOEnd(
+      sessionID: sessionID,
+      channelID: channelID
+    )
+  }
+}
+
+private func haloPumpApplePairingOutbound(
+  sessionID: UInt64,
+  channelID: UInt64,
+  channel: HaloAppleQuicControlChannel
+) async -> HaloAppleNativePairingOutcome {
+  var frameBuffer = [UInt8](
+    repeating: 0,
+    count: HaloAppleQuicControlProtocol.maximumFrameLength
+  )
+  do {
+    while !Task.isCancelled {
+      let rawState = halo_apple_pairing_state(sessionID, channelID)
+      if rawState == 1 { return .authenticated }
+      if rawState == 2 || rawState < 0 { return .failed }
+
+      var frameLength = 0
+      let status = frameBuffer.withUnsafeMutableBufferPointer { buffer in
+        halo_apple_pairing_drain(
+          sessionID,
+          channelID,
+          buffer.baseAddress,
+          buffer.count,
+          &frameLength
+        )
+      }
+      if status == haloAppleNativeStatusOK {
+        try await channel.sendFrame(Data(frameBuffer.prefix(frameLength)))
+      } else if status != haloAppleNativeStatusEmpty {
+        return await haloApplePairingStateAfterIOEnd(
+          sessionID: sessionID,
+          channelID: channelID
+        )
+      }
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return .cancelled
+  } catch is CancellationError {
+    return .cancelled
+  } catch {
+    return await haloApplePairingStateAfterIOEnd(
+      sessionID: sessionID,
+      channelID: channelID
+    )
+  }
+}
+
+private func haloApplePairingState(
+  sessionID: UInt64,
+  channelID: UInt64
+) -> HaloAppleNativePairingOutcome {
+  switch halo_apple_pairing_state(sessionID, channelID) {
+  case 1: .authenticated
+  case 2: .failed
+  default: .failed
+  }
+}
+
+private func haloApplePairingStateAfterIOEnd(
+  sessionID: UInt64,
+  channelID: UInt64
+) async -> HaloAppleNativePairingOutcome {
+  for _ in 0 ..< 5 {
+    let rawState = halo_apple_pairing_state(sessionID, channelID)
+    if rawState == 1 { return .authenticated }
+    if rawState == 2 || rawState < 0 { return .failed }
+    do {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    } catch {
+      return .cancelled
+    }
+  }
+  return .failed
 }
 
 private enum HaloIdentityStorageError: Error {

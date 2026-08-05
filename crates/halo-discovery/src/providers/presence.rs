@@ -777,9 +777,12 @@ mod tests {
 
     #[test]
     fn source_address_controls_endpoint_ip() {
-        let source = SocketAddr::from(([192, 0, 2, 9], PRESENCE_PORT));
+        let source = SocketAddr::from(([192, 168, 2, 9], PRESENCE_PORT));
         let endpoint = endpoint_from_source(source, 4433)
             .unwrap_or_else(|| panic!("source should produce endpoint"));
-        assert_eq!(endpoint.address(), SocketAddr::from(([192, 0, 2, 9], 4433)));
+        assert_eq!(
+            endpoint.address(),
+            SocketAddr::from(([192, 168, 2, 9], 4433))
+        );
     }
 }

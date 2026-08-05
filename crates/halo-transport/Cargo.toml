@@ -11,6 +11,7 @@ description = "Bounded QUIC connection orchestration for Halo"
 async-trait.workspace = true
 halo-crypto = { path = "../halo-crypto" }
 halo-protocol = { path = "../halo-protocol" }
+p256.workspace = true
 quinn.workspace = true
 rcgen.workspace = true
 rustls.workspace = true

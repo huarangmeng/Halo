@@ -13,10 +13,20 @@ Android, iOS, Windows, and macOS through a Flutter UI.
 > physical-device interoperability testing. The Rust core now has an
 > experimental TLS-bound pairing protocol, QUIC listener/client, protected
 > identity adapters, remembered-peer persistence, and a Flutter consent flow.
-> The integrated flow passes host loopback and Android/macOS compile checks, but
-> has not yet been verified between physical Android and macOS devices. There is
-> no SDK release, secure file-transfer implementation, or four-platform
-> validation.
+> The integrated flow passes host loopback and Android, iOS Simulator, and
+> macOS compile checks, but
+> has not yet been verified between physical Android and macOS devices. The LAN
+> path now retains authenticated QUIC sessions and the Rust single-file engine
+> verifies and safely finalizes bounded chunks. The shared Demo now wires this
+> LAN path to Android/macOS native file pickers and receiver consent without
+> moving file bytes through Dart. The common data-channel broker now enforces
+> unmetered local paths, interface-binding attestation, bounded prompts, and
+> authentication-before-win. Android now transfers an OS-network-bound UDP
+> socket directly from Kotlin to Rust and falls back only to loopback when no
+> eligible unmetered LAN exists; Apple/Windows LAN binding and Direct/Aware
+> adapters remain pending. Host loopback and host-build checks pass,
+> while physical Android ↔ macOS transfer remains unverified. There is no SDK
+> release or four-platform validation.
 
 Halo is not an AirDrop implementation and does not attempt to reverse engineer
 Apple's private stack. The near-term promise is smaller and testable: when two
@@ -114,18 +124,26 @@ or iOS background limits.
 
 ## Platform expectations
 
-| Platform | MVP discovery | MVP transport | Important constraint |
+| Platform | Discovery | Common baseline | Direct data-channel plan |
 | --- | --- | --- | --- |
-| Android | BLE + parallel LAN providers | QUIC over LAN | BLE, Wi-Fi/multicast behavior, and permissions vary by OS and vendor |
-| iOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Local-network, Bluetooth, and background execution restrictions apply |
-| Windows | WinRT BLE + parallel LAN providers | QUIC over LAN | Hardware, firewall, and network profile can limit individual providers |
-| macOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Current demo is Apple Silicon-only; permissions, sandbox, and signing rules depend on distribution |
+| Android | BLE + parallel LAN providers | QUIC over LAN | Wi-Fi Direct and Wi-Fi Aware |
+| iOS/iPadOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Apple peer-to-peer Wi-Fi; Wi-Fi Aware on supported iOS/iPadOS 26 hardware |
+| Windows | WinRT BLE + parallel LAN providers | QUIC over LAN | Wi-Fi Direct |
+| macOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Apple peer-to-peer Wi-Fi |
 
 BLE rendezvous is required in the first discovery milestone and runs in parallel
 with LAN providers when permission and hardware allow. It advertises minimal,
 rotating presence data, does not transport files, and does not establish identity
 by itself. Provider unavailability is reported explicitly while other providers
 continue running.
+
+Apple peer-to-peer Wi-Fi, Wi-Fi Direct, and Wi-Fi Aware are committed data
+channel providers, not alternate file protocols. Each establishes an eligible
+local path beneath the same authenticated QUIC and transfer protocol. Platform
+and pair-specific support remains `planned` until its real-device gate passes;
+cellular and Internet paths are never an implicit fallback. See the complete
+[data-channel architecture](docs/architecture/data-channels.md) and
+[ADR 0007](docs/adr/0007-multi-bearer-data-channels.md).
 
 Linux is a desired core/CLI validation target after the protocol workspace is
 running, but a Linux Flutter demo is not part of the first four-platform
@@ -138,6 +156,8 @@ without leaking platform behavior into the wire protocol.
 
 The detailed discovery design is currently available in Simplified Chinese at
 [`docs/architecture/discovery.zh-CN.md`](docs/architecture/discovery.zh-CN.md).
+The multi-bearer transport design is documented in
+[`docs/architecture/data-channels.md`](docs/architecture/data-channels.md).
 
 ```mermaid
 flowchart TB
@@ -145,7 +165,8 @@ flowchart TB
     FFI --> Core["halo-core\nsession orchestration + public SDK"]
     Core --> Discovery["halo-discovery\ncandidate discovery"]
     Core --> Crypto["halo-crypto\nidentity + pairing + trust"]
-    Core --> Transport["halo-transport\nauthenticated QUIC sessions"]
+    Core --> Channels["data-channel broker\nLAN · Apple P2P · Direct · Aware"]
+    Channels --> Transport["halo-transport\nauthenticated QUIC sessions"]
     Core --> Transfer["halo-transfer\noffers + chunks + resume"]
     Discovery --> Adapters["platform adapters\nAndroid · iOS · Windows · macOS"]
     Crypto --> Adapters
@@ -205,8 +226,9 @@ backpressure, avoids loading whole files into memory, and verifies chunks before
 recording them as durable. A completed file is checked against its manifest and
 moved from private staging to the chosen destination.
 
-This separation leaves room for a future transport—such as Wi-Fi Direct on a
-subset of platforms—without changing the transfer UX or public service API.
+The data-channel broker applies this same transfer model to LAN, Apple
+peer-to-peer Wi-Fi, Wi-Fi Direct, and Wi-Fi Aware without changing the transfer
+UX or public service API.
 
 ## Discovery, connection, and trust
 
@@ -366,14 +388,22 @@ devices on supported OS versions.
 Exit: `0.1` SDK preview with an explicit compatibility window and published
 protocol specification.
 
-### Phase 4 — nearby platform experiments
+### Phase 4 — infrastructure-free data channels
 
-- BLE-assisted rendezvous where useful and permitted
+- Provider foundation: four bearer kinds, bounded local-only candidate race,
+  and an Apple Network.framework P2P adapter with an exporter-bound direct
+  Swift/Rust pairing bridge, retained authenticated QUIC groups, and bounded
+  data-stream records (still `planned`; transfer wiring and real-device gates
+  are pending)
+- Apple peer-to-peer Wi-Fi provider for supported Apple device pairs
+- Wi-Fi Direct provider and Android ↔ Windows interoperability matrix
+- Wi-Fi Aware provider for supported Android and iOS/iPadOS devices
+- Bounded channel racing, explicit capability UI, teardown, and no-cellular tests
 - Clipboard or small-message service as the second protocol consumer
-- Evaluate Wi-Fi Direct/NAN, internet rendezvous, and relays separately per OS
-- Investigate third-party implementations and conformance testing
 
-These are research tracks, not commitments for the MVP.
+These providers are part of Halo's staged data-channel plan. A provider remains
+`planned` until its documented real-device gate passes. Internet rendezvous,
+NAT traversal, cloud relays, and user accounts remain separate non-MVP research.
 
 ## Success criteria
 
@@ -421,7 +451,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 flutter analyze apps/halo_demo
-flutter test apps/halo_demo
+(cd apps/halo_demo && flutter test)
 ```
 
 Run the Android/iOS/macOS discovery demo from `apps/halo_demo`; the native launchers

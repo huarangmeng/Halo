@@ -5,6 +5,10 @@
 - 日期：2026-07-28
 - 适用平台：Android、iOS、Windows、macOS
 
+本文负责会合、Observation 和候选证据。Apple 点对点 Wi-Fi、Wi-Fi Direct、
+Wi-Fi Aware 与局域网如何建立实际数据路径，以
+[`data-channels.md`](data-channels.md) 为准。
+
 ## 1. 目标
 
 Halo 的发现能力不能等同于“调用一次 mDNS，然后把回调展示出来”。它需要在权限、
@@ -40,8 +44,9 @@ flowchart TB
 
     subgraph Native["平台原生系统驱动（无 Halo 协议逻辑）"]
         BLE["BLE 广播 + 扫描 + GATT 原始字节"]
-        AWARE["Android Wi-Fi Aware（能力可用时）"]
-        WFD["Windows Wi-Fi Direct（实验）"]
+        APPLEP2P["Apple 点对点 Wi-Fi"]
+        AWARE["Android / Apple Wi-Fi Aware"]
+        WFD["Android / Windows Wi-Fi Direct"]
     end
 
     subgraph Rust["Rust halo-discovery"]
@@ -58,6 +63,7 @@ flowchart TB
 
     UI --> BRIDGE
     BLE --> BRIDGE --> BUS
+    APPLEP2P --> BRIDGE
     AWARE --> BRIDGE
     WFD --> BRIDGE
     MDNS --> BUS
@@ -95,9 +101,9 @@ flowchart TB
 
 | Provider | 适用范围 | 决策 |
 | --- | --- | --- |
-| Android Wi-Fi Aware/NAN | 支持该硬件的 Android ↔ Android | 能力可用且权限允许时并行启用，可同时提供发现和独立数据路径 |
-| Windows Wi-Fi Direct Services | 驱动支持的 Windows 设备 | 作为实验 Provider；真机互操作矩阵通过前不参与默认连接竞速 |
-| Apple Multipeer Connectivity | Apple ↔ Apple | 不作为稳定基础能力；当前官方 API 已出现弃用标记，先做隔离实验，不依赖它完成四端目标 |
+| Wi-Fi Aware/NAN | 支持该能力的 Android ↔ Android，以及受支持的 Android ↔ iOS/iPadOS 26 设备 | 正式计划 Provider；完成服务发现和独立数据路径，跨栈真机矩阵通过前保持 `planned` |
+| Wi-Fi Direct Services | Android ↔ Android、Windows ↔ Windows、Android ↔ Windows | 正式计划 Provider；完成 Group 建立与 IP 端点发现，跨厂商矩阵通过前保持 `planned` |
+| Apple Network.framework 点对点 Wi-Fi | Apple ↔ Apple | 正式计划 Provider；使用 peer-to-peer Bonjour/QUIC，不向 Android 或 Windows 宣称兼容 |
 | UWB / Nearby Interaction | 部分 Apple/Android 设备 | 只适合测距或方向增强，不是通用发现入口，不纳入首批自动 Provider |
 | Bluetooth Classic | 各平台行为不一致 | 需要更重的系统配对和可发现状态，收益低于 BLE，不纳入首批实现 |
 
@@ -452,8 +458,9 @@ Flutter 不解析 Presence，不合并设备，不选择链路，也不拥有发
 平台原生代码只负责：
 
 - BLE scanner/advertiser/GATT client/server；
-- Android Wi-Fi Aware；
-- Windows Wi-Fi Direct；
+- Android 与 Apple Wi-Fi Aware；
+- Android 与 Windows Wi-Fi Direct；
+- Apple Network.framework 点对点 Wi-Fi；
 - 权限、系统状态、前后台与硬件能力回调；
 - 传递原始字节和会话内临时句柄，不构造 `Observation`。
 
@@ -509,6 +516,9 @@ stopped
 - `NSLocalNetworkUsageDescription`
 - `NSBonjourServices` 包含 Halo 实际服务类型
 - Bluetooth 使用说明键按最低系统版本配置
+- Apple 点对点 Wi-Fi 的 Network.framework browser/listener 显式启用 peer-to-peer
+- iOS/iPadOS 26 Wi-Fi Aware 的 `com.apple.developer.wifi-aware` entitlement 与
+  `WiFiAwareServices` 声明（仅启用该 Provider 时）
 - App Sandbox/network client/server entitlement 按分发模型验证
 
 ### Android
@@ -517,12 +527,14 @@ stopped
 - Android 12+ 的 `BLUETOOTH_SCAN`、`BLUETOOTH_ADVERTISE`、
   `BLUETOOTH_CONNECT`
 - Android 13+ Wi-Fi Aware 所需 `NEARBY_WIFI_DEVICES`（启用该 Provider 时）
+- Wi-Fi Direct 所需网络、附近 Wi-Fi 设备与旧系统位置权限按目标版本配置
 - 旧系统 Location 权限只按实际系统要求申请
 - mDNS/组播运行期间正确持有并及时释放 `MulticastLock`
 
 ### Windows
 
 - 打包应用的 `bluetooth`、网络 client/server 等 capability
+- Wi-Fi Direct 的 `Proximity` capability 和系统配对/连接 UI
 - 防火墙规则由安装或首次监听流程明确处理
 - 未打包 Win32 与 MSIX 分发分别验证
 
@@ -609,8 +621,10 @@ stopped
    的纯系统 BLE 驱动；每完成一端立即通过同一 Flutter + Rust 会话做双机测试。
 5. 接入真实 QUIC/TLS 握手竞速与连接结果反馈。
 6. 完成网络切换、权限变化、睡眠唤醒和资源释放。
-7. 在能力支持的设备上加入 Wi-Fi Aware；隔离验证 Windows Wi-Fi Direct。
-8. 完成全矩阵、模糊测试、压力测试、功耗基线和发布报告。
+7. 接入 Apple 点对点 Wi-Fi，并完成 Apple 原生 QUIC 与 Quinn 的 exporter/线协议互通。
+8. 接入 Android/Windows Wi-Fi Direct，完成 Group Owner 双向和跨厂商矩阵。
+9. 接入 Android/Apple Wi-Fi Aware，完成发布/订阅角色反转和跨栈矩阵。
+10. 完成全矩阵、模糊测试、压力测试、功耗基线和发布报告。
 
 不允许先做一个永远返回成功的 BLE stub，再把 README 状态改成 supported。
 
@@ -642,8 +656,10 @@ stopped
 
 - [Android Bluetooth permissions](https://developer.android.com/develop/connectivity/bluetooth/bt-permissions)
 - [Android Wi-Fi Aware overview](https://developer.android.com/develop/connectivity/wifi/wifi-aware)
+- [Android Wi-Fi Direct overview](https://developer.android.com/develop/connectivity/wifi/wifi-direct)
 - [Apple CoreBluetooth data transfer](https://developer.apple.com/documentation/corebluetooth/transferring-data-between-bluetooth-low-energy-devices)
-- [Apple Multipeer Connectivity](https://developer.apple.com/documentation/multipeerconnectivity)
+- [Apple TN3151 networking API guidance](https://developer.apple.com/documentation/technotes/tn3151-choosing-the-right-networking-api)
+- [Apple Wi-Fi Aware](https://developer.apple.com/documentation/WiFiAware)
 - [Apple NSBonjourServices](https://developer.apple.com/documentation/bundleresources/information-property-list/nsbonjourservices)
 - [Windows Bluetooth LE advertisements](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/ble-beacon)
 - [Windows Wi-Fi Direct services sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/wifidirectservices/)

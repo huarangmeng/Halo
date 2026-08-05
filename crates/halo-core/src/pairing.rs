@@ -1,20 +1,23 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     path::PathBuf,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
 use halo_crypto::{DeviceIdentity, FileTrustStore, PairingCode, PeerId, SecretIdentityBlob};
+use halo_discovery::is_local_network_ip;
 use halo_protocol::{Capabilities, ProtocolRange};
 use halo_transport::{
-    ConnectErrorKind, ConnectionCandidate, ConnectionRacer, PairingFlowError, PairingPrompt,
-    PairingUserInteraction, QuicEndpoint, pair_as_initiator, pair_as_responder,
+    ConnectErrorKind, ConnectionCandidate, ConnectionRacer, ControlIo, DataChannelCost,
+    DataChannelPathClass, EstablishedPathProperties, PairingFlowError, PairingPrompt,
+    PairingUserInteraction, PlatformControlDriver, PlatformControlError, PlatformControlIo,
+    QuicConnection, QuicEndpoint, pair_as_initiator, pair_as_responder, platform_control_channel,
 };
 use thiserror::Error;
 use tokio::{
@@ -23,10 +26,52 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+use crate::transfer::{ReceiveTransferDecision, TransferCoordinator, TransferPolicy};
+use crate::{TransferEvent, TransferServiceError};
+
 const EVENT_LIMIT: usize = 128;
 const MAX_CANDIDATES: usize = 8;
 const MAX_PAIRING_CONNECTIONS: usize = 4;
-const USER_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_PLATFORM_CHANNELS: usize = 8;
+const MAX_AUTHENTICATED_SESSIONS: usize = 8;
+const MAX_RECENT_PEER_ATTEMPTS: usize = 128;
+const MIN_CONNECT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_CONNECT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
+const MIN_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const MAX_RETRY_COOLDOWN: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PairingPolicy {
+    pub connect_attempt_timeout: Duration,
+    pub confirmation_timeout: Duration,
+    pub retry_cooldown: Duration,
+}
+
+impl Default for PairingPolicy {
+    fn default() -> Self {
+        Self {
+            connect_attempt_timeout: Duration::from_secs(8),
+            confirmation_timeout: Duration::from_secs(60),
+            retry_cooldown: Duration::from_secs(2),
+        }
+    }
+}
+
+impl PairingPolicy {
+    pub fn validate(self) -> Result<Self, PairingError> {
+        if self.connect_attempt_timeout < MIN_CONNECT_ATTEMPT_TIMEOUT
+            || self.connect_attempt_timeout > MAX_CONNECT_ATTEMPT_TIMEOUT
+            || self.confirmation_timeout < MIN_CONFIRMATION_TIMEOUT
+            || self.confirmation_timeout > MAX_CONFIRMATION_TIMEOUT
+            || self.retry_cooldown.is_zero()
+            || self.retry_cooldown > MAX_RETRY_COOLDOWN
+        {
+            return Err(PairingError::InvalidPairingPolicy);
+        }
+        Ok(self)
+    }
+}
 
 /// Configuration for one foreground pairing service.
 #[derive(Debug)]
@@ -34,6 +79,9 @@ pub struct PairingConfig {
     identity_blob: Option<Vec<u8>>,
     trust_store_directory: PathBuf,
     bind_address: SocketAddr,
+    bound_socket: Option<(UdpSocket, EstablishedPathProperties)>,
+    pairing_policy: PairingPolicy,
+    transfer_policy: TransferPolicy,
 }
 
 impl PairingConfig {
@@ -43,6 +91,9 @@ impl PairingConfig {
             identity_blob: None,
             trust_store_directory: trust_store_directory.into(),
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+            bound_socket: None,
+            pairing_policy: PairingPolicy::default(),
+            transfer_policy: TransferPolicy::default(),
         }
     }
 
@@ -57,6 +108,47 @@ impl PairingConfig {
     #[must_use]
     pub fn with_bind_address(mut self, bind_address: SocketAddr) -> Self {
         self.bind_address = bind_address;
+        self.bound_socket = None;
+        self
+    }
+
+    /// Uses a UDP socket that a platform adapter already bound to an approved
+    /// local interface or OS network. The socket becomes owned by Quinn.
+    #[must_use]
+    pub fn with_bound_socket(
+        mut self,
+        socket: UdpSocket,
+        path_properties: EstablishedPathProperties,
+    ) -> Self {
+        self.bound_socket = Some((socket, path_properties));
+        self
+    }
+
+    /// Uses a UDP socket that a platform adapter has pinned to a local,
+    /// unmetered OS network. This is the preferred entry point for platform
+    /// adapters because callers cannot accidentally attest broader path
+    /// properties than the adapter contract permits.
+    #[must_use]
+    pub fn with_bound_local_unmetered_socket(self, socket: UdpSocket) -> Self {
+        self.with_bound_socket(
+            socket,
+            EstablishedPathProperties {
+                path_class: DataChannelPathClass::LocalNetwork,
+                cost: DataChannelCost::Unmetered,
+                interface_bound: true,
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn with_transfer_policy(mut self, transfer_policy: TransferPolicy) -> Self {
+        self.transfer_policy = transfer_policy;
+        self
+    }
+
+    #[must_use]
+    pub fn with_pairing_policy(mut self, pairing_policy: PairingPolicy) -> Self {
+        self.pairing_policy = pairing_policy;
         self
     }
 }
@@ -67,6 +159,19 @@ pub struct PairingStartup {
     pub service: PairingService,
     pub listen_port: u16,
     new_identity_blob: Option<SecretIdentityBlob>,
+}
+
+pub struct PlatformTlsIdentity {
+    pub certificate_der: Vec<u8>,
+    pub private_key_x963: Vec<u8>,
+}
+
+pub fn create_platform_tls_identity() -> Result<PlatformTlsIdentity, PairingError> {
+    let identity = halo_transport::generate_native_tls_identity()?;
+    Ok(PlatformTlsIdentity {
+        certificate_der: identity.certificate_der,
+        private_key_x963: identity.private_key_x963,
+    })
 }
 
 impl PairingStartup {
@@ -89,6 +194,20 @@ pub enum PairingEventKind {
     TimedOut,
     Cancelled,
     Failed,
+    Disconnected,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlatformPairingRole {
+    Initiator,
+    Responder,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlatformPairingChannelState {
+    Pending,
+    Authenticated,
+    Failed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +220,9 @@ pub struct PairingEvent {
     pub peer_fingerprint: Option<String>,
     pub short_code: Option<String>,
     pub already_trusted: bool,
+    /// Present only when Rust retained the authenticated LAN QUIC connection.
+    /// Native Apple sessions remain owned by their platform adapter.
+    pub authenticated_session_id: Option<u64>,
     /// Stable category only; never contains addresses, keys, or filesystem paths.
     pub detail: Option<String>,
 }
@@ -116,8 +238,17 @@ pub struct PairingService {
 
 impl PairingService {
     pub async fn start(config: PairingConfig) -> Result<PairingStartup, PairingError> {
-        let trust_store = Arc::new(FileTrustStore::new(config.trust_store_directory)?);
-        let (identity, new_identity_blob) = match config.identity_blob {
+        let PairingConfig {
+            identity_blob,
+            trust_store_directory,
+            bind_address,
+            bound_socket,
+            pairing_policy,
+            transfer_policy,
+        } = config;
+        let pairing_policy = pairing_policy.validate()?;
+        let trust_store = Arc::new(FileTrustStore::new(trust_store_directory)?);
+        let (identity, new_identity_blob) = match identity_blob {
             Some(bytes) => {
                 let blob = SecretIdentityBlob::new(bytes)?;
                 (DeviceIdentity::from_blob(&blob)?, None)
@@ -128,13 +259,30 @@ impl PairingService {
                 (identity, Some(blob))
             }
         };
-        let endpoint = Arc::new(QuicEndpoint::server(config.bind_address)?);
+        let endpoint = Arc::new(match bound_socket {
+            Some((socket, properties)) => {
+                if !properties.interface_bound
+                    || properties.cost != DataChannelCost::Unmetered
+                    || !matches!(
+                        properties.path_class,
+                        DataChannelPathClass::LocalNetwork | DataChannelPathClass::PeerToPeer
+                    )
+                {
+                    return Err(PairingError::IneligiblePath);
+                }
+                QuicEndpoint::server_with_socket(socket)?
+            }
+            None => QuicEndpoint::server(bind_address)?,
+        });
         let listen_port = endpoint.local_addr()?.port();
         let service = Self {
             endpoint,
             identity: Arc::new(identity),
             trust_store,
-            shared: Arc::new(PairingShared::default()),
+            shared: Arc::new(
+                PairingShared::new(transfer_policy, pairing_policy)
+                    .map_err(|_| PairingError::InvalidTransferPolicy)?,
+            ),
             cancellation: CancellationToken::new(),
         };
         tokio::spawn(accept_loop(
@@ -163,6 +311,7 @@ impl PairingService {
         let mut unique = HashSet::new();
         let addresses = endpoints
             .into_iter()
+            .filter(|address| is_local_network_ip(address.ip()))
             .filter(|address| unique.insert(*address))
             .take(MAX_CANDIDATES)
             .collect::<Vec<_>>();
@@ -173,6 +322,15 @@ impl PairingService {
             .try_acquire_owned()
             .map_err(|_| PairingError::Busy)?;
         let reference = Some(peer_reference);
+        let peer_attempt = match self.shared.reserve_peer_attempt(reference.as_deref()) {
+            Ok(attempt) => attempt,
+            Err(error @ PairingError::RateLimited) => {
+                self.shared
+                    .emit(failed_event(reference.clone(), "retry_rate_limited"))?;
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
         self.shared.emit(new_event(
             PairingEventKind::Connecting,
             reference.clone(),
@@ -187,9 +345,140 @@ impl PairingService {
             cancellation: self.cancellation.child_token(),
             reference,
             addresses,
+            _peer_attempt: peer_attempt,
             _permit: permit,
         }));
         Ok(())
+    }
+
+    /// Attaches an already-established native QUIC control stream. The caller
+    /// supplies the TLS exporter from that exact connection and relays only
+    /// complete bounded Halo frames through the returned opaque channel ID.
+    pub fn attach_platform_channel(
+        &self,
+        peer_reference: Option<String>,
+        role: PlatformPairingRole,
+        channel_binding: [u8; 32],
+    ) -> Result<u64, PairingError> {
+        if peer_reference
+            .as_ref()
+            .is_some_and(|reference| reference.is_empty() || reference.len() > 64)
+        {
+            return Err(PairingError::InvalidPeerReference);
+        }
+        let permit = Arc::clone(&self.shared.connection_slots)
+            .try_acquire_owned()
+            .map_err(|_| PairingError::Busy)?;
+        let peer_attempt = match self.shared.reserve_peer_attempt(peer_reference.as_deref()) {
+            Ok(attempt) => attempt,
+            Err(error @ PairingError::RateLimited) => {
+                self.shared
+                    .emit(failed_event(peer_reference.clone(), "retry_rate_limited"))?;
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
+        let (driver, io) =
+            platform_control_channel(halo_crypto::TlsChannelBinding::new(channel_binding));
+        let channel_id = self.shared.insert_platform_channel(driver)?;
+        if let Err(error) = self.shared.emit(new_event(
+            PairingEventKind::Connecting,
+            peer_reference.clone(),
+            None,
+            None,
+        )) {
+            let _ = self.shared.remove_platform_channel(channel_id);
+            return Err(error);
+        }
+        tokio::spawn(run_platform_pairing(PlatformPairingTask {
+            channel_id,
+            io,
+            role,
+            identity: Arc::clone(&self.identity),
+            trust_store: Arc::clone(&self.trust_store),
+            shared: Arc::clone(&self.shared),
+            cancellation: self.cancellation.child_token(),
+            reference: peer_reference,
+            _peer_attempt: peer_attempt,
+            _permit: permit,
+        }));
+        Ok(channel_id)
+    }
+
+    pub fn submit_platform_frame(
+        &self,
+        channel_id: u64,
+        frame: Vec<u8>,
+    ) -> Result<(), PairingError> {
+        self.shared
+            .with_platform_channel(channel_id, |driver| driver.try_submit_frame(frame))?
+            .map_err(platform_control_error)
+    }
+
+    pub fn drain_platform_frames(
+        &self,
+        channel_id: u64,
+        maximum_frames: usize,
+    ) -> Result<Vec<Vec<u8>>, PairingError> {
+        self.shared
+            .with_platform_channel(channel_id, |driver| driver.drain_outbound(maximum_frames))?
+            .map_err(platform_control_error)
+    }
+
+    pub fn close_platform_channel(&self, channel_id: u64) -> Result<(), PairingError> {
+        self.shared.remove_platform_channel(channel_id)
+    }
+
+    pub fn platform_channel_state(
+        &self,
+        channel_id: u64,
+    ) -> Result<PlatformPairingChannelState, PairingError> {
+        self.shared.platform_channel_state(channel_id)
+    }
+
+    pub fn authenticated_sessions(&self) -> Result<Vec<AuthenticatedSessionInfo>, PairingError> {
+        self.shared.authenticated_sessions()
+    }
+
+    /// Starts one single-file transfer on a retained authenticated LAN QUIC session.
+    pub async fn send_file(
+        &self,
+        authenticated_session_id: u64,
+        source_path: PathBuf,
+        advertised_name: Option<String>,
+    ) -> Result<String, TransferServiceError> {
+        self.shared
+            .transfers
+            .send_file(authenticated_session_id, source_path, advertised_name)
+            .await
+    }
+
+    pub fn transfer_events_after(
+        &self,
+        event_id: u64,
+    ) -> Result<Vec<TransferEvent>, TransferServiceError> {
+        self.shared.transfers.events_after(event_id)
+    }
+
+    pub fn respond_to_transfer(
+        &self,
+        request_id: u64,
+        accepted: bool,
+        staging_directory: Option<PathBuf>,
+        destination_directory: Option<PathBuf>,
+    ) -> Result<(), TransferServiceError> {
+        self.shared.transfers.respond(
+            request_id,
+            ReceiveTransferDecision {
+                accepted,
+                staging_directory,
+                destination_directory,
+            },
+        )
+    }
+
+    pub fn cancel_transfer(&self, transfer_id: &str) -> Result<(), TransferServiceError> {
+        self.shared.transfers.cancel(transfer_id)
     }
 
     pub fn events_after(&self, event_id: u64) -> Result<Vec<PairingEvent>, PairingError> {
@@ -211,6 +500,9 @@ impl PairingService {
 
     pub async fn shutdown(&self) {
         self.cancellation.cancel();
+        self.shared.transfers.shutdown();
+        self.shared.cancel_platform_channels();
+        self.shared.close_authenticated_sessions();
         self.endpoint.close();
         self.endpoint.wait_idle().await;
     }
@@ -219,6 +511,9 @@ impl PairingService {
 impl Drop for PairingService {
     fn drop(&mut self) {
         self.cancellation.cancel();
+        self.shared.transfers.shutdown();
+        self.shared.cancel_platform_channels();
+        self.shared.close_authenticated_sessions();
         self.endpoint.close();
     }
 }
@@ -228,22 +523,120 @@ struct PairingShared {
     next_request_id: AtomicU64,
     events: Mutex<VecDeque<PairingEvent>>,
     pending: Mutex<HashMap<u64, oneshot::Sender<bool>>>,
+    next_platform_channel_id: AtomicU64,
+    platform_channels: Mutex<HashMap<u64, PlatformChannelEntry>>,
+    next_authenticated_session_id: AtomicU64,
+    authenticated_sessions: Mutex<HashMap<u64, AuthenticatedQuicSession>>,
+    transfers: Arc<TransferCoordinator>,
     connection_slots: Arc<Semaphore>,
+    active_peer_attempts: Mutex<HashSet<String>>,
+    recent_peer_attempts: Mutex<HashMap<String, Instant>>,
+    pairing_policy: PairingPolicy,
 }
 
-impl Default for PairingShared {
-    fn default() -> Self {
-        Self {
-            next_event_id: AtomicU64::new(0),
-            next_request_id: AtomicU64::new(0),
-            events: Mutex::new(VecDeque::new()),
-            pending: Mutex::new(HashMap::new()),
-            connection_slots: Arc::new(Semaphore::new(MAX_PAIRING_CONNECTIONS)),
+struct PeerAttemptGuard {
+    shared: std::sync::Weak<PairingShared>,
+    key: String,
+}
+
+impl Drop for PeerAttemptGuard {
+    fn drop(&mut self) {
+        if let Some(shared) = self.shared.upgrade()
+            && let Ok(mut active) = shared.active_peer_attempts.lock()
+        {
+            active.remove(&self.key);
+            drop(active);
+            if let Ok(mut recent) = shared.recent_peer_attempts.lock() {
+                if recent.len() >= MAX_RECENT_PEER_ATTEMPTS && !recent.contains_key(&self.key) {
+                    let oldest = recent
+                        .iter()
+                        .min_by_key(|(_, completed_at)| **completed_at)
+                        .map(|(key, _)| key.clone());
+                    if let Some(oldest) = oldest {
+                        recent.remove(&oldest);
+                    }
+                }
+                recent.insert(self.key.clone(), Instant::now());
+            }
         }
     }
 }
 
+struct PlatformChannelEntry {
+    driver: PlatformControlDriver,
+    state: PlatformPairingChannelState,
+}
+
+struct AuthenticatedQuicSession {
+    connection: QuicConnection,
+    peer_id: PeerId,
+    peer_reference: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedSessionInfo {
+    pub session_id: u64,
+    pub peer_fingerprint: String,
+    pub peer_reference: Option<String>,
+}
+
 impl PairingShared {
+    fn new(
+        transfer_policy: TransferPolicy,
+        pairing_policy: PairingPolicy,
+    ) -> Result<Self, TransferServiceError> {
+        Ok(Self {
+            next_event_id: AtomicU64::new(0),
+            next_request_id: AtomicU64::new(0),
+            events: Mutex::new(VecDeque::new()),
+            pending: Mutex::new(HashMap::new()),
+            next_platform_channel_id: AtomicU64::new(0),
+            platform_channels: Mutex::new(HashMap::new()),
+            next_authenticated_session_id: AtomicU64::new(0),
+            authenticated_sessions: Mutex::new(HashMap::new()),
+            transfers: Arc::new(TransferCoordinator::new(transfer_policy)?),
+            connection_slots: Arc::new(Semaphore::new(MAX_PAIRING_CONNECTIONS)),
+            active_peer_attempts: Mutex::new(HashSet::new()),
+            recent_peer_attempts: Mutex::new(HashMap::new()),
+            pairing_policy,
+        })
+    }
+
+    fn reserve_peer_attempt(
+        self: &Arc<Self>,
+        peer_reference: Option<&str>,
+    ) -> Result<Option<PeerAttemptGuard>, PairingError> {
+        let Some(peer_reference) = peer_reference else {
+            return Ok(None);
+        };
+        let key = peer_reference.to_ascii_lowercase();
+        let now = Instant::now();
+        let mut active = self
+            .active_peer_attempts
+            .lock()
+            .map_err(|_| PairingError::InternalState)?;
+        if !active.insert(key.clone()) {
+            return Err(PairingError::Busy);
+        }
+        let mut recent = match self.recent_peer_attempts.lock() {
+            Ok(recent) => recent,
+            Err(_) => {
+                active.remove(&key);
+                return Err(PairingError::InternalState);
+            }
+        };
+        recent.retain(|_, completed_at| {
+            now.saturating_duration_since(*completed_at) < self.pairing_policy.retry_cooldown
+        });
+        if recent.contains_key(&key) {
+            active.remove(&key);
+            return Err(PairingError::RateLimited);
+        }
+        Ok(Some(PeerAttemptGuard {
+            shared: Arc::downgrade(self),
+            key,
+        }))
+    }
     fn emit(&self, mut event: PairingEvent) -> Result<(), PairingError> {
         event.event_id = self.next_event_id.fetch_add(1, Ordering::Relaxed) + 1;
         let mut events = self
@@ -268,6 +661,203 @@ impl PairingShared {
                     .cloned()
                     .collect()
             })
+    }
+
+    fn insert_platform_channel(&self, driver: PlatformControlDriver) -> Result<u64, PairingError> {
+        let mut channels = self
+            .platform_channels
+            .lock()
+            .map_err(|_| PairingError::InternalState)?;
+        if channels.len() >= MAX_PLATFORM_CHANNELS {
+            return Err(PairingError::Busy);
+        }
+        let channel_id = self
+            .next_platform_channel_id
+            .fetch_add(1, Ordering::Relaxed)
+            .checked_add(1)
+            .ok_or(PairingError::InternalState)?;
+        if channel_id == 0
+            || channels
+                .insert(
+                    channel_id,
+                    PlatformChannelEntry {
+                        driver,
+                        state: PlatformPairingChannelState::Pending,
+                    },
+                )
+                .is_some()
+        {
+            return Err(PairingError::InternalState);
+        }
+        Ok(channel_id)
+    }
+
+    fn with_platform_channel<T>(
+        &self,
+        channel_id: u64,
+        operation: impl FnOnce(&mut PlatformControlDriver) -> T,
+    ) -> Result<T, PairingError> {
+        let mut channels = self
+            .platform_channels
+            .lock()
+            .map_err(|_| PairingError::InternalState)?;
+        let entry = channels
+            .get_mut(&channel_id)
+            .ok_or(PairingError::PlatformChannelNotFound)?;
+        Ok(operation(&mut entry.driver))
+    }
+
+    fn set_platform_channel_state(&self, channel_id: u64, state: PlatformPairingChannelState) {
+        if let Ok(mut channels) = self.platform_channels.lock()
+            && let Some(entry) = channels.get_mut(&channel_id)
+        {
+            entry.state = state;
+        }
+    }
+
+    fn platform_channel_state(
+        &self,
+        channel_id: u64,
+    ) -> Result<PlatformPairingChannelState, PairingError> {
+        self.platform_channels
+            .lock()
+            .map_err(|_| PairingError::InternalState)?
+            .get(&channel_id)
+            .map(|entry| entry.state)
+            .ok_or(PairingError::PlatformChannelNotFound)
+    }
+
+    fn remove_platform_channel(&self, channel_id: u64) -> Result<(), PairingError> {
+        let driver = self
+            .platform_channels
+            .lock()
+            .map_err(|_| PairingError::InternalState)?
+            .remove(&channel_id)
+            .ok_or(PairingError::PlatformChannelNotFound)?;
+        driver.driver.cancel();
+        Ok(())
+    }
+
+    fn cancel_platform_channels(&self) {
+        if let Ok(mut channels) = self.platform_channels.lock() {
+            for entry in channels.values() {
+                entry.driver.cancel();
+            }
+            channels.clear();
+        }
+    }
+
+    fn insert_authenticated_session(
+        self: &Arc<Self>,
+        connection: QuicConnection,
+        peer_id: PeerId,
+        peer_reference: Option<String>,
+    ) -> Result<u64, PairingError> {
+        let mut sessions = self
+            .authenticated_sessions
+            .lock()
+            .map_err(|_| PairingError::InternalState)?;
+        if let Some(existing_id) = sessions
+            .iter()
+            .find_map(|(session_id, session)| (session.peer_id == peer_id).then_some(*session_id))
+        {
+            connection.close();
+            return Ok(existing_id);
+        }
+        if sessions.len() >= MAX_AUTHENTICATED_SESSIONS {
+            return Err(PairingError::Busy);
+        }
+        let session_id = self
+            .next_authenticated_session_id
+            .fetch_add(1, Ordering::Relaxed)
+            .checked_add(1)
+            .ok_or(PairingError::InternalState)?;
+        if session_id == 0 {
+            return Err(PairingError::InternalState);
+        }
+        if sessions
+            .insert(
+                session_id,
+                AuthenticatedQuicSession {
+                    connection: connection.clone(),
+                    peer_id,
+                    peer_reference,
+                },
+            )
+            .is_some()
+        {
+            return Err(PairingError::InternalState);
+        }
+        drop(sessions);
+        if self
+            .transfers
+            .attach_session(session_id, connection.clone())
+            .is_err()
+        {
+            if let Ok(mut sessions) = self.authenticated_sessions.lock() {
+                sessions.remove(&session_id);
+            }
+            return Err(PairingError::InternalState);
+        }
+        let monitor_connection = connection;
+        let shared = Arc::downgrade(self);
+        tokio::spawn(async move {
+            monitor_connection.closed().await;
+            if let Some(shared) = shared.upgrade() {
+                shared.remove_authenticated_session(session_id, true);
+            }
+        });
+        Ok(session_id)
+    }
+
+    fn remove_authenticated_session(&self, session_id: u64, emit_event: bool) {
+        let session = self
+            .authenticated_sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.remove(&session_id));
+        let Some(session) = session else {
+            return;
+        };
+        self.transfers.detach_session(session_id);
+        if emit_event {
+            let mut event = new_event(
+                PairingEventKind::Disconnected,
+                session.peer_reference,
+                Some(peer_fingerprint(session.peer_id)),
+                None,
+            );
+            event.authenticated_session_id = Some(session_id);
+            event.detail = Some("transport_closed".to_owned());
+            emit_ignoring_closed(self, event);
+        }
+    }
+
+    fn authenticated_sessions(&self) -> Result<Vec<AuthenticatedSessionInfo>, PairingError> {
+        let sessions = self
+            .authenticated_sessions
+            .lock()
+            .map_err(|_| PairingError::InternalState)?;
+        let mut infos = sessions
+            .iter()
+            .map(|(session_id, session)| AuthenticatedSessionInfo {
+                session_id: *session_id,
+                peer_fingerprint: peer_fingerprint(session.peer_id),
+                peer_reference: session.peer_reference.clone(),
+            })
+            .collect::<Vec<_>>();
+        infos.sort_by_key(|info| info.session_id);
+        Ok(infos)
+    }
+
+    fn close_authenticated_sessions(&self) {
+        self.transfers.shutdown();
+        if let Ok(mut sessions) = self.authenticated_sessions.lock() {
+            for session in sessions.values() {
+                session.connection.close();
+            }
+            sessions.clear();
+        }
     }
 }
 
@@ -314,7 +904,7 @@ impl PairingUserInteraction for EventInteraction {
 
         let response = tokio::select! {
             () = self.cancellation.cancelled() => Err(PairingFlowError::UserCancelled),
-            result = timeout(USER_CONFIRMATION_TIMEOUT, receiver) => match result {
+            result = timeout(self.shared.pairing_policy.confirmation_timeout, receiver) => match result {
                 Ok(Ok(accepted)) => Ok(accepted),
                 Ok(Err(_)) | Err(_) => Err(PairingFlowError::UserCancelled),
             },
@@ -334,6 +924,20 @@ struct InitiatorTask {
     cancellation: CancellationToken,
     reference: Option<String>,
     addresses: Vec<SocketAddr>,
+    _peer_attempt: Option<PeerAttemptGuard>,
+    _permit: OwnedSemaphorePermit,
+}
+
+struct PlatformPairingTask {
+    channel_id: u64,
+    io: PlatformControlIo,
+    role: PlatformPairingRole,
+    identity: Arc<DeviceIdentity>,
+    trust_store: Arc<FileTrustStore>,
+    shared: Arc<PairingShared>,
+    cancellation: CancellationToken,
+    reference: Option<String>,
+    _peer_attempt: Option<PeerAttemptGuard>,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -350,6 +954,10 @@ async fn accept_loop(
             Err(_) if cancellation.is_cancelled() => break,
             Err(_) => continue,
         };
+        if !is_local_network_ip(connection.remote_address().ip()) {
+            connection.close();
+            continue;
+        }
         let permit = match Arc::clone(&shared.connection_slots).try_acquire_owned() {
             Ok(permit) => permit,
             Err(_) => {
@@ -372,7 +980,7 @@ async fn accept_loop(
                     peer_reference: None,
                     cancellation: child_cancellation,
                 };
-                let outcome = pair_as_responder(
+                let pairing_result = pair_as_responder(
                     &mut io,
                     &identity,
                     protocol_versions()?,
@@ -381,13 +989,14 @@ async fn accept_loop(
                     trust_store.as_ref(),
                     &interaction,
                 )
-                .await?;
+                .await;
+                io.close().await;
+                let outcome = pairing_result?;
                 trust_store.bind_ip(remote_ip, &outcome.peer).await?;
                 Ok(outcome)
             }
             .await;
-            emit_outcome(&shared, None, result);
-            connection.close();
+            retain_quic_session_or_emit_failure(&shared, None, connection, result);
         });
     }
 }
@@ -401,70 +1010,201 @@ async fn run_initiator(task: InitiatorTask) {
         cancellation,
         reference,
         addresses,
+        _peer_attempt,
         _permit,
     } = task;
-    let candidates = addresses
-        .into_iter()
-        .enumerate()
-        .map(|(index, address)| ConnectionCandidate {
-            endpoint: address,
-            start_delay: Duration::from_millis((index as u64).saturating_mul(150)),
-        })
-        .collect();
-    let racer = match ConnectionRacer::new(Duration::from_secs(8), MAX_CANDIDATES) {
+    let racer = match ConnectionRacer::new(
+        shared.pairing_policy.connect_attempt_timeout,
+        MAX_CANDIDATES,
+    ) {
         Ok(racer) => racer,
         Err(_) => {
             emit_ignoring_closed(&shared, failed_event(reference, "configuration"));
             return;
         }
     };
-    let (_, connection) = match racer
-        .connect(
-            Arc::clone(&endpoint),
-            candidates,
-            cancellation.child_token(),
-        )
-        .await
-    {
-        Ok(connected) => connected,
-        Err(error) => {
-            let kind = match error.kind {
-                ConnectErrorKind::Cancelled => PairingEventKind::Cancelled,
-                ConnectErrorKind::Timeout => PairingEventKind::TimedOut,
-                ConnectErrorKind::IdentityChanged => PairingEventKind::IdentityChanged,
-                _ => PairingEventKind::Failed,
-            };
-            let mut event = new_event(kind, reference, None, None);
-            event.detail = Some(connect_error_category(error.kind).to_owned());
-            emit_ignoring_closed(&shared, event);
-            return;
-        }
-    };
-    let remote_ip = connection.remote_address().ip();
-    let result = async {
-        let expected = trust_store.load_expected_for_ip(remote_ip).await?;
-        let mut io = connection.open_control().await?;
-        let interaction = EventInteraction {
-            shared: Arc::clone(&shared),
-            peer_reference: reference.clone(),
-            cancellation,
+    let mut remaining = addresses;
+    while !remaining.is_empty() {
+        let candidates = remaining
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, address)| ConnectionCandidate {
+                endpoint: address,
+                start_delay: Duration::from_millis((index as u64).saturating_mul(150)),
+            })
+            .collect();
+        let (selected, connection) = match racer
+            .connect(
+                Arc::clone(&endpoint),
+                candidates,
+                cancellation.child_token(),
+            )
+            .await
+        {
+            Ok(connected) => connected,
+            Err(error) => {
+                emit_connect_failure(&shared, reference, error.kind);
+                return;
+            }
         };
-        let outcome = pair_as_initiator(
-            &mut io,
-            &identity,
-            protocol_versions()?,
-            Capabilities::default(),
-            expected.as_ref(),
-            trust_store.as_ref(),
-            &interaction,
-        )
-        .await?;
-        trust_store.bind_ip(remote_ip, &outcome.peer).await?;
-        Ok(outcome)
+        remaining.retain(|address| *address != selected);
+        let remote_ip = connection.remote_address().ip();
+        let result = async {
+            let expected = trust_store.load_expected_for_ip(remote_ip).await?;
+            let mut io = connection.open_control().await?;
+            let interaction = EventInteraction {
+                shared: Arc::clone(&shared),
+                peer_reference: reference.clone(),
+                cancellation: cancellation.child_token(),
+            };
+            let pairing_result = pair_as_initiator(
+                &mut io,
+                &identity,
+                protocol_versions()?,
+                Capabilities::default(),
+                expected.as_ref(),
+                trust_store.as_ref(),
+                &interaction,
+            )
+            .await;
+            io.close().await;
+            let outcome = pairing_result?;
+            trust_store.bind_ip(remote_ip, &outcome.peer).await?;
+            Ok(outcome)
+        }
+        .await;
+        match result {
+            Ok(outcome) => {
+                retain_quic_session_or_emit_failure(&shared, reference, connection, Ok(outcome));
+                return;
+            }
+            Err(error)
+                if is_recoverable_candidate_failure(&error)
+                    && !remaining.is_empty()
+                    && !cancellation.is_cancelled() =>
+            {
+                connection.close();
+            }
+            Err(error) => {
+                connection.close();
+                emit_outcome(&shared, reference, Err(error), None);
+                return;
+            }
+        }
+    }
+}
+
+fn emit_connect_failure(shared: &PairingShared, reference: Option<String>, kind: ConnectErrorKind) {
+    let event_kind = match kind {
+        ConnectErrorKind::Cancelled => PairingEventKind::Cancelled,
+        ConnectErrorKind::Timeout => PairingEventKind::TimedOut,
+        ConnectErrorKind::IdentityChanged => PairingEventKind::IdentityChanged,
+        _ => PairingEventKind::Failed,
+    };
+    let mut event = new_event(event_kind, reference, None, None);
+    event.detail = Some(connect_error_category(kind).to_owned());
+    emit_ignoring_closed(shared, event);
+}
+
+fn is_recoverable_candidate_failure(error: &PairingFlowError) -> bool {
+    matches!(
+        error,
+        PairingFlowError::Io(_) | PairingFlowError::Crypto(_) | PairingFlowError::UnexpectedMessage
+    )
+}
+
+async fn run_platform_pairing(task: PlatformPairingTask) {
+    let PlatformPairingTask {
+        channel_id,
+        mut io,
+        role,
+        identity,
+        trust_store,
+        shared,
+        cancellation,
+        reference,
+        _peer_attempt,
+        _permit,
+    } = task;
+    let interaction = EventInteraction {
+        shared: Arc::clone(&shared),
+        peer_reference: reference.clone(),
+        cancellation,
+    };
+    let result = async {
+        let versions = protocol_versions()?;
+        match role {
+            PlatformPairingRole::Initiator => {
+                pair_as_initiator(
+                    &mut io,
+                    &identity,
+                    versions,
+                    Capabilities::default(),
+                    None,
+                    trust_store.as_ref(),
+                    &interaction,
+                )
+                .await
+            }
+            PlatformPairingRole::Responder => {
+                pair_as_responder(
+                    &mut io,
+                    &identity,
+                    versions,
+                    Capabilities::default(),
+                    None,
+                    trust_store.as_ref(),
+                    &interaction,
+                )
+                .await
+            }
+        }
     }
     .await;
-    connection.close();
-    emit_outcome(&shared, reference, result);
+    shared.set_platform_channel_state(
+        channel_id,
+        if result.is_ok() {
+            PlatformPairingChannelState::Authenticated
+        } else {
+            PlatformPairingChannelState::Failed
+        },
+    );
+    io.close().await;
+    emit_outcome(&shared, reference, result, None);
+}
+
+fn retain_quic_session_or_emit_failure(
+    shared: &Arc<PairingShared>,
+    reference: Option<String>,
+    connection: QuicConnection,
+    result: Result<halo_transport::PairingOutcome, PairingFlowError>,
+) {
+    match result {
+        Ok(outcome) => {
+            let peer_id = outcome.peer.peer_id();
+            match shared.insert_authenticated_session(
+                connection.clone(),
+                peer_id,
+                reference.clone(),
+            ) {
+                Ok(session_id) => {
+                    emit_outcome(shared, reference, Ok(outcome), Some(session_id));
+                }
+                Err(_) => {
+                    connection.close();
+                    emit_ignoring_closed(
+                        shared,
+                        failed_event(reference, "authenticated_session_capacity"),
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            connection.close();
+            emit_outcome(shared, reference, Err(error), None);
+        }
+    }
 }
 
 fn protocol_versions() -> Result<ProtocolRange, PairingFlowError> {
@@ -475,6 +1215,7 @@ fn emit_outcome(
     shared: &PairingShared,
     reference: Option<String>,
     result: Result<halo_transport::PairingOutcome, PairingFlowError>,
+    authenticated_session_id: Option<u64>,
 ) {
     let event = match result {
         Ok(outcome) => {
@@ -485,6 +1226,7 @@ fn emit_outcome(
                 None,
             );
             event.already_trusted = outcome.already_trusted;
+            event.authenticated_session_id = authenticated_session_id;
             event
         }
         Err(PairingFlowError::IdentityChanged) => {
@@ -523,6 +1265,7 @@ fn new_event(
         peer_fingerprint: fingerprint,
         short_code: code,
         already_trusted: false,
+        authenticated_session_id: None,
         detail: None,
     }
 }
@@ -581,8 +1324,16 @@ pub enum PairingError {
     NoEndpoints,
     #[error("pairing service is busy")]
     Busy,
+    #[error("pairing retry is temporarily rate limited")]
+    RateLimited,
     #[error("pairing request is no longer pending")]
     RequestNotPending,
+    #[error("platform pairing channel does not exist")]
+    PlatformChannelNotFound,
+    #[error("platform pairing channel is backpressured")]
+    PlatformChannelBackpressure,
+    #[error("platform pairing frame or drain limit is invalid")]
+    InvalidPlatformFrame,
     #[error("pairing internal state is unavailable")]
     InternalState,
     #[error("protected identity is invalid")]
@@ -591,6 +1342,12 @@ pub enum PairingError {
     Store,
     #[error("QUIC endpoint setup failed")]
     Endpoint,
+    #[error("transfer policy configuration is invalid")]
+    InvalidTransferPolicy,
+    #[error("pairing policy configuration is invalid")]
+    InvalidPairingPolicy,
+    #[error("pre-bound QUIC socket does not satisfy the nearby path policy")]
+    IneligiblePath,
 }
 
 impl From<halo_crypto::IdentityError> for PairingError {
@@ -611,6 +1368,16 @@ impl From<halo_transport::QuicEndpointError> for PairingError {
     }
 }
 
+fn platform_control_error(error: PlatformControlError) -> PairingError {
+    match error {
+        PlatformControlError::QueueFull => PairingError::PlatformChannelBackpressure,
+        PlatformControlError::Closed => PairingError::PlatformChannelNotFound,
+        PlatformControlError::InvalidFrameLength(_) | PlatformControlError::InvalidDrainLimit => {
+            PairingError::InvalidPlatformFrame
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -619,6 +1386,43 @@ mod tests {
 
     fn test_directory(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("halo-core-pairing-{name}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn pairing_policy_rejects_unbounded_or_zero_timing() {
+        for policy in [
+            PairingPolicy {
+                connect_attempt_timeout: Duration::ZERO,
+                ..PairingPolicy::default()
+            },
+            PairingPolicy {
+                connect_attempt_timeout: MAX_CONNECT_ATTEMPT_TIMEOUT + Duration::from_secs(1),
+                ..PairingPolicy::default()
+            },
+            PairingPolicy {
+                confirmation_timeout: Duration::from_secs(1),
+                ..PairingPolicy::default()
+            },
+            PairingPolicy {
+                confirmation_timeout: MAX_CONFIRMATION_TIMEOUT + Duration::from_secs(1),
+                ..PairingPolicy::default()
+            },
+            PairingPolicy {
+                retry_cooldown: Duration::ZERO,
+                ..PairingPolicy::default()
+            },
+        ] {
+            assert!(matches!(
+                policy.validate(),
+                Err(PairingError::InvalidPairingPolicy)
+            ));
+        }
+        assert_eq!(
+            PairingPolicy::default()
+                .validate()
+                .unwrap_or_else(|error| panic!("default policy: {error}")),
+            PairingPolicy::default()
+        );
     }
 
     async fn wait_for(
@@ -636,6 +1440,561 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         panic!("timed out waiting for pairing event")
+    }
+
+    async fn wait_for_after(
+        service: &PairingService,
+        event_id: u64,
+        predicate: impl Fn(&PairingEvent) -> bool,
+    ) -> PairingEvent {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while Instant::now() < deadline {
+            let events = service
+                .events_after(event_id)
+                .unwrap_or_else(|error| panic!("pairing events: {error}"));
+            if let Some(event) = events.into_iter().find(&predicate) {
+                return event;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("timed out waiting for later pairing event")
+    }
+
+    async fn wait_for_transfer(
+        service: &PairingService,
+        predicate: impl Fn(&TransferEvent) -> bool,
+    ) -> TransferEvent {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while Instant::now() < deadline {
+            let events = service
+                .transfer_events_after(0)
+                .unwrap_or_else(|error| panic!("transfer events: {error}"));
+            if let Some(event) = events.into_iter().find(&predicate) {
+                return event;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("timed out waiting for transfer event")
+    }
+
+    fn relay_platform_frames(
+        source: &PairingService,
+        source_channel: u64,
+        destination: &PairingService,
+        destination_channel: u64,
+    ) {
+        let frames = match source.drain_platform_frames(source_channel, 4) {
+            Ok(frames) => frames,
+            Err(PairingError::PlatformChannelNotFound) => return,
+            Err(error) => panic!("drain platform frames: {error}"),
+        };
+        for frame in frames {
+            match destination.submit_platform_frame(destination_channel, frame) {
+                Ok(()) | Err(PairingError::PlatformChannelNotFound) => {}
+                Err(error) => panic!("submit platform frame: {error}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn platform_control_bridge_completes_exporter_bound_pairing() {
+        let initiator = PairingService::start(
+            PairingConfig::new(test_directory("platform-initiator"))
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("initiator start: {error}"));
+        let responder = PairingService::start(
+            PairingConfig::new(test_directory("platform-responder"))
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("responder start: {error}"));
+        let binding = [0x7a; 32];
+        let initiator_channel = initiator
+            .service
+            .attach_platform_channel(
+                Some("apple-p2p-peer".to_owned()),
+                PlatformPairingRole::Initiator,
+                binding,
+            )
+            .unwrap_or_else(|error| panic!("attach initiator: {error}"));
+        let responder_channel = responder
+            .service
+            .attach_platform_channel(None, PlatformPairingRole::Responder, binding)
+            .unwrap_or_else(|error| panic!("attach responder: {error}"));
+
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut responded = false;
+        loop {
+            relay_platform_frames(
+                &initiator.service,
+                initiator_channel,
+                &responder.service,
+                responder_channel,
+            );
+            relay_platform_frames(
+                &responder.service,
+                responder_channel,
+                &initiator.service,
+                initiator_channel,
+            );
+
+            let responder_events = responder
+                .service
+                .events_after(0)
+                .unwrap_or_else(|error| panic!("responder events: {error}"));
+            if !responded
+                && let Some(request) = responder_events
+                    .iter()
+                    .find(|event| event.kind == PairingEventKind::ConfirmationRequired)
+            {
+                responder
+                    .service
+                    .respond(
+                        request.request_id.unwrap_or_else(|| panic!("request id")),
+                        true,
+                    )
+                    .unwrap_or_else(|error| panic!("respond: {error}"));
+                responded = true;
+            }
+            let initiator_events = initiator
+                .service
+                .events_after(0)
+                .unwrap_or_else(|error| panic!("initiator events: {error}"));
+            let initiator_trusted = initiator_events
+                .iter()
+                .any(|event| event.kind == PairingEventKind::Trusted);
+            let responder_trusted = responder_events
+                .iter()
+                .any(|event| event.kind == PairingEventKind::Trusted);
+            if initiator_trusted && responder_trusted {
+                let initiator_code = initiator_events
+                    .iter()
+                    .find_map(|event| event.short_code.as_ref());
+                let responder_code = responder_events
+                    .iter()
+                    .find_map(|event| event.short_code.as_ref());
+                assert_eq!(initiator_code, responder_code);
+                assert_eq!(
+                    initiator
+                        .service
+                        .platform_channel_state(initiator_channel)
+                        .unwrap_or_else(|error| panic!("initiator channel state: {error}")),
+                    PlatformPairingChannelState::Authenticated
+                );
+                assert_eq!(
+                    responder
+                        .service
+                        .platform_channel_state(responder_channel)
+                        .unwrap_or_else(|error| panic!("responder channel state: {error}")),
+                    PlatformPairingChannelState::Authenticated
+                );
+                break;
+            }
+            assert!(Instant::now() < deadline, "platform pairing timed out");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        initiator
+            .service
+            .close_platform_channel(initiator_channel)
+            .unwrap_or_else(|error| panic!("close initiator: {error}"));
+        responder
+            .service
+            .close_platform_channel(responder_channel)
+            .unwrap_or_else(|error| panic!("close responder: {error}"));
+        initiator.service.shutdown().await;
+        responder.service.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn pairing_service_accepts_a_platform_bound_udp_socket() {
+        let directory = test_directory("platform-bound-socket");
+        let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+            .unwrap_or_else(|error| panic!("bound socket: {error}"));
+        let expected_port = socket
+            .local_addr()
+            .unwrap_or_else(|error| panic!("bound address: {error}"))
+            .port();
+        let startup = PairingService::start(
+            PairingConfig::new(&directory).with_bound_local_unmetered_socket(socket),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("service start: {error}"));
+        assert_eq!(startup.listen_port, expected_port);
+        startup.service.shutdown().await;
+
+        let unbound_socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+            .unwrap_or_else(|error| panic!("unbound policy socket: {error}"));
+        let rejected = PairingService::start(
+            PairingConfig::new(directory.join("rejected")).with_bound_socket(
+                unbound_socket,
+                EstablishedPathProperties {
+                    path_class: DataChannelPathClass::LocalNetwork,
+                    cost: DataChannelCost::Unmetered,
+                    interface_bound: false,
+                },
+            ),
+        )
+        .await;
+        assert!(matches!(rejected, Err(PairingError::IneligiblePath)));
+        let _ = tokio::fs::remove_dir_all(directory).await;
+    }
+
+    #[tokio::test]
+    async fn duplicate_active_attempt_for_the_same_peer_is_rejected() {
+        let directory = test_directory("duplicate-peer-attempt");
+        let startup = PairingService::start(
+            PairingConfig::new(&directory)
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                .with_pairing_policy(PairingPolicy {
+                    connect_attempt_timeout: Duration::from_secs(1),
+                    ..PairingPolicy::default()
+                }),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("service start: {error}"));
+        let unreachable = SocketAddr::from((Ipv4Addr::LOCALHOST, 9));
+        startup
+            .service
+            .connect("Peer-A".to_owned(), vec![unreachable])
+            .await
+            .unwrap_or_else(|error| panic!("first attempt: {error}"));
+        assert!(matches!(
+            startup
+                .service
+                .connect("peer-a".to_owned(), vec![unreachable])
+                .await,
+            Err(PairingError::Busy)
+        ));
+        let completed = wait_for(&startup.service, |event| {
+            event.kind == PairingEventKind::Failed || event.kind == PairingEventKind::TimedOut
+        })
+        .await;
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            match startup
+                .service
+                .connect("peer-a".to_owned(), vec![unreachable])
+                .await
+            {
+                Err(PairingError::Busy) if Instant::now() < deadline => {
+                    tokio::task::yield_now().await;
+                }
+                result => {
+                    assert!(matches!(result, Err(PairingError::RateLimited)));
+                    break;
+                }
+            }
+        }
+        let limited = wait_for_after(&startup.service, completed.event_id, |event| {
+            event.detail.as_deref() == Some("retry_rate_limited")
+        })
+        .await;
+        assert_eq!(limited.kind, PairingEventKind::Failed);
+        startup.service.shutdown().await;
+        let _ = tokio::fs::remove_dir_all(directory).await;
+    }
+
+    #[tokio::test]
+    async fn closed_transport_removes_authenticated_session_and_emits_event() {
+        let first_directory = test_directory("disconnect-first");
+        let second_directory = test_directory("disconnect-second");
+        let first = PairingService::start(
+            PairingConfig::new(&first_directory)
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                .with_pairing_policy(PairingPolicy {
+                    retry_cooldown: Duration::from_millis(10),
+                    ..PairingPolicy::default()
+                }),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("first start: {error}"));
+        let second = PairingService::start(
+            PairingConfig::new(&second_directory)
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("second start: {error}"));
+        first
+            .service
+            .connect(
+                "second".to_owned(),
+                vec![SocketAddr::from((Ipv4Addr::LOCALHOST, second.listen_port))],
+            )
+            .await
+            .unwrap_or_else(|error| panic!("connect: {error}"));
+        let request = wait_for(&second.service, |event| {
+            event.kind == PairingEventKind::ConfirmationRequired
+        })
+        .await;
+        second
+            .service
+            .respond(
+                request.request_id.unwrap_or_else(|| panic!("request id")),
+                true,
+            )
+            .unwrap_or_else(|error| panic!("respond: {error}"));
+        let trusted = wait_for(&first.service, |event| {
+            event.kind == PairingEventKind::Trusted
+        })
+        .await;
+        let session_id = trusted
+            .authenticated_session_id
+            .unwrap_or_else(|| panic!("authenticated session"));
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        first
+            .service
+            .connect(
+                "second".to_owned(),
+                vec![SocketAddr::from((Ipv4Addr::LOCALHOST, second.listen_port))],
+            )
+            .await
+            .unwrap_or_else(|error| panic!("repeat connect: {error}"));
+        let repeated = wait_for_after(&first.service, trusted.event_id, |event| {
+            event.kind == PairingEventKind::Trusted
+        })
+        .await;
+        assert_eq!(repeated.authenticated_session_id, Some(session_id));
+        assert_eq!(
+            first
+                .service
+                .authenticated_sessions()
+                .unwrap_or_else(|error| panic!("deduplicated sessions: {error}"))
+                .len(),
+            1
+        );
+        second.service.shutdown().await;
+
+        let disconnected = wait_for(&first.service, |event| {
+            event.kind == PairingEventKind::Disconnected
+        })
+        .await;
+        assert_eq!(disconnected.authenticated_session_id, Some(session_id));
+        assert_eq!(disconnected.detail.as_deref(), Some("transport_closed"));
+        assert!(
+            first
+                .service
+                .authenticated_sessions()
+                .unwrap_or_else(|error| panic!("authenticated sessions: {error}"))
+                .is_empty()
+        );
+
+        first.service.shutdown().await;
+        let _ = tokio::fs::remove_dir_all(first_directory).await;
+        let _ = tokio::fs::remove_dir_all(second_directory).await;
+    }
+
+    #[tokio::test]
+    async fn authenticated_lan_session_transfers_verified_file_after_receiver_consent() {
+        let sender_directory = test_directory("transfer-sender");
+        let receiver_directory = test_directory("transfer-receiver");
+        let staging_directory = receiver_directory.join("staging");
+        let destination_directory = receiver_directory.join("received");
+        tokio::fs::create_dir_all(&sender_directory)
+            .await
+            .unwrap_or_else(|error| panic!("sender directory: {error}"));
+        tokio::fs::create_dir_all(&staging_directory)
+            .await
+            .unwrap_or_else(|error| panic!("staging directory: {error}"));
+        tokio::fs::create_dir_all(&destination_directory)
+            .await
+            .unwrap_or_else(|error| panic!("destination directory: {error}"));
+        let source_path = sender_directory.join("hello.txt");
+        let expected = b"authenticated QUIC transfer";
+        tokio::fs::write(&source_path, expected)
+            .await
+            .unwrap_or_else(|error| panic!("source file: {error}"));
+
+        let sender = PairingService::start(
+            PairingConfig::new(sender_directory.join("trust"))
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("sender start: {error}"));
+        let receiver = PairingService::start(
+            PairingConfig::new(receiver_directory.join("trust"))
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("receiver start: {error}"));
+        sender
+            .service
+            .connect(
+                "receiver".to_owned(),
+                vec![SocketAddr::from((
+                    Ipv4Addr::LOCALHOST,
+                    receiver.listen_port,
+                ))],
+            )
+            .await
+            .unwrap_or_else(|error| panic!("connect: {error}"));
+        let pairing_request = wait_for(&receiver.service, |event| {
+            event.kind == PairingEventKind::ConfirmationRequired
+        })
+        .await;
+        receiver
+            .service
+            .respond(
+                pairing_request
+                    .request_id
+                    .unwrap_or_else(|| panic!("pairing request id")),
+                true,
+            )
+            .unwrap_or_else(|error| panic!("pairing response: {error}"));
+        let trusted = wait_for(&sender.service, |event| {
+            event.kind == PairingEventKind::Trusted
+        })
+        .await;
+        let receiver_trusted = wait_for(&receiver.service, |event| {
+            event.kind == PairingEventKind::Trusted
+        })
+        .await;
+        let session_id = trusted
+            .authenticated_session_id
+            .unwrap_or_else(|| panic!("authenticated session"));
+
+        let transfer_id = sender
+            .service
+            .send_file(session_id, source_path, None)
+            .await
+            .unwrap_or_else(|error| panic!("start transfer: {error}"));
+        let offer = wait_for_transfer(&receiver.service, |event| {
+            event.kind == crate::TransferEventKind::OfferReceived
+        })
+        .await;
+        assert_eq!(offer.transfer_id, transfer_id);
+        receiver
+            .service
+            .respond_to_transfer(
+                offer
+                    .request_id
+                    .unwrap_or_else(|| panic!("transfer request id")),
+                true,
+                Some(staging_directory.clone()),
+                Some(destination_directory.clone()),
+            )
+            .unwrap_or_else(|error| panic!("accept transfer: {error}"));
+        let received = wait_for_transfer(&receiver.service, |event| {
+            event.kind == crate::TransferEventKind::Completed
+        })
+        .await;
+        let sent = wait_for_transfer(&sender.service, |event| {
+            event.kind == crate::TransferEventKind::Completed
+        })
+        .await;
+        assert_eq!(received.transfer_id, transfer_id);
+        assert_eq!(sent.transfer_id, transfer_id);
+        assert!(
+            receiver
+                .service
+                .transfer_events_after(0)
+                .unwrap_or_else(|error| panic!("receiver progress events: {error}"))
+                .iter()
+                .any(|event| {
+                    event.kind == crate::TransferEventKind::Transferring
+                        && event.authenticated_session_id
+                            == receiver_trusted
+                                .authenticated_session_id
+                                .unwrap_or_else(|| panic!("receiver session"))
+                        && event.transferred_bytes == expected.len() as u64
+                })
+        );
+        assert_eq!(
+            received.final_path,
+            Some(destination_directory.join("hello.txt"))
+        );
+        assert_eq!(
+            tokio::fs::read(destination_directory.join("hello.txt"))
+                .await
+                .unwrap_or_else(|error| panic!("received file: {error}")),
+            expected
+        );
+
+        sender.service.shutdown().await;
+        receiver.service.shutdown().await;
+        let _ = tokio::fs::remove_dir_all(sender_directory).await;
+        let _ = tokio::fs::remove_dir_all(receiver_directory).await;
+    }
+
+    #[tokio::test]
+    async fn malformed_fast_lan_candidate_falls_through_to_authenticated_peer() {
+        let sender_directory = test_directory("fallback-sender");
+        let receiver_directory = test_directory("fallback-receiver");
+        let malformed = Arc::new(
+            QuicEndpoint::server(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                .unwrap_or_else(|error| panic!("malformed endpoint: {error}")),
+        );
+        let malformed_address = malformed
+            .local_addr()
+            .unwrap_or_else(|error| panic!("malformed address: {error}"));
+        let malformed_task = {
+            let malformed = Arc::clone(&malformed);
+            tokio::spawn(async move {
+                let connection = malformed
+                    .accept(CancellationToken::new())
+                    .await
+                    .unwrap_or_else(|error| panic!("malformed accept: {error}"));
+                let mut control = connection
+                    .accept_control()
+                    .await
+                    .unwrap_or_else(|error| panic!("malformed control: {error}"));
+                let _ = control.receive_frame(4096).await;
+                control
+                    .send_frame(&[0_u8; 12])
+                    .await
+                    .unwrap_or_else(|error| panic!("malformed response: {error}"));
+                control.close().await;
+            })
+        };
+        let sender = PairingService::start(
+            PairingConfig::new(&sender_directory)
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("sender start: {error}"));
+        let receiver = PairingService::start(
+            PairingConfig::new(&receiver_directory)
+                .with_bind_address(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("receiver start: {error}"));
+        sender
+            .service
+            .connect(
+                "fallback-peer".to_owned(),
+                vec![
+                    malformed_address,
+                    SocketAddr::from((Ipv4Addr::LOCALHOST, receiver.listen_port)),
+                ],
+            )
+            .await
+            .unwrap_or_else(|error| panic!("connect: {error}"));
+        let request = wait_for(&receiver.service, |event| {
+            event.kind == PairingEventKind::ConfirmationRequired
+        })
+        .await;
+        receiver
+            .service
+            .respond(
+                request.request_id.unwrap_or_else(|| panic!("request id")),
+                true,
+            )
+            .unwrap_or_else(|error| panic!("respond: {error}"));
+        let trusted = wait_for(&sender.service, |event| {
+            event.kind == PairingEventKind::Trusted
+        })
+        .await;
+        assert!(trusted.authenticated_session_id.is_some());
+        malformed_task
+            .await
+            .unwrap_or_else(|error| panic!("malformed task: {error}"));
+        sender.service.shutdown().await;
+        receiver.service.shutdown().await;
+        malformed.close();
+        let _ = tokio::fs::remove_dir_all(sender_directory).await;
+        let _ = tokio::fs::remove_dir_all(receiver_directory).await;
     }
 
     #[tokio::test]
@@ -681,17 +2040,33 @@ mod tests {
                 true,
             )
             .unwrap_or_else(|error| panic!("respond: {error}"));
-        assert!(
-            !wait_for(&first.service, |event| event.kind
-                == PairingEventKind::Trusted)
-            .await
-            .already_trusted
+        let first_trusted = wait_for(&first.service, |event| {
+            event.kind == PairingEventKind::Trusted
+        })
+        .await;
+        let second_trusted = wait_for(&second.service, |event| {
+            event.kind == PairingEventKind::Trusted
+        })
+        .await;
+        assert!(!first_trusted.already_trusted);
+        assert!(!second_trusted.already_trusted);
+        assert!(first_trusted.authenticated_session_id.is_some());
+        assert!(second_trusted.authenticated_session_id.is_some());
+        assert_eq!(
+            first
+                .service
+                .authenticated_sessions()
+                .unwrap_or_else(|error| panic!("first sessions: {error}"))
+                .len(),
+            1
         );
-        assert!(
-            !wait_for(&second.service, |event| event.kind
-                == PairingEventKind::Trusted)
-            .await
-            .already_trusted
+        assert_eq!(
+            second
+                .service
+                .authenticated_sessions()
+                .unwrap_or_else(|error| panic!("second sessions: {error}"))
+                .len(),
+            1
         );
         first.service.shutdown().await;
         second.service.shutdown().await;

@@ -12,6 +12,7 @@ async-trait.workspace = true
 halo-crypto = { path = "../halo-crypto" }
 halo-discovery = { path = "../halo-discovery" }
 halo-protocol = { path = "../halo-protocol" }
+halo-transfer = { path = "../halo-transfer" }
 halo-transport = { path = "../halo-transport" }
 thiserror.workspace = true
 tokio.workspace = true

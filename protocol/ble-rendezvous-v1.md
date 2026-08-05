@@ -5,6 +5,10 @@ Status: Experimental
 BLE provides proximity rendezvous and can trigger LAN probing. It does not
 authenticate a device and never carries file data.
 
+If BLE discovers a peer while no mutually reachable Wi-Fi or Ethernet endpoint
+exists, the peer is visible but not connectable. Implementations must report
+that state and must not fall back to cellular data or an Internet relay.
+
 ## UUIDs
 
 | Item | UUID |
@@ -56,6 +60,9 @@ The server must rate-limit writes per temporary peripheral/central and globally.
 ## Endpoint hints characteristic
 
 This optional characteristic is not yet frozen. It will carry a bounded list of
-IP address, interface scope, transport, and port hints. Every hint remains
-untrusted and must complete the normal secure handshake. Native adapters must
-not ship an ad-hoc encoding before this section is finalized with golden vectors.
+opaque data-channel hints or IP address, interface scope, transport, and port
+hints. A hint may trigger LAN, Apple peer-to-peer Wi-Fi, Wi-Fi Direct, or Wi-Fi
+Aware candidate establishment, but never represents an established link. Every
+hint remains untrusted and must complete the normal secure handshake. Native
+adapters must not ship an ad-hoc encoding before this section is finalized with
+golden vectors.

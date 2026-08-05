@@ -713,6 +713,7 @@ dependencies = [
  "halo-crypto",
  "halo-discovery",
  "halo-protocol",
+ "halo-transfer",
  "halo-transport",
  "thiserror",
  "tokio",
@@ -758,12 +759,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo-transfer"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "getrandom 0.4.3",
+ "halo-crypto",
+ "halo-protocol",
+ "halo-transport",
+ "sha2 0.10.9",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "halo-transport"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "halo-crypto",
  "halo-protocol",
+ "p256",
  "quinn",
  "rcgen",
  "rustls",

@@ -113,6 +113,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pairingFailed => 'Secure pairing failed';
 
   @override
+  String get pairingDisconnected => 'Secure connection ended';
+
+  @override
   String get pairingAccept => 'Codes match — accept';
 
   @override
@@ -170,6 +173,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connectionFailureInternal => 'An internal connection task failed.';
 
   @override
+  String get connectionSessionClosed =>
+      'The authenticated transport closed. Reconnect to start a new authenticated session.';
+
+  @override
+  String get connectionRetryRateLimited =>
+      'Wait briefly before retrying this device.';
+
+  @override
   String connectionFailureUnknown(String reason) {
     return 'Connection failed: $reason';
   }
@@ -200,6 +211,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get capabilityLocalNetwork => 'Local network';
+
+  @override
+  String get capabilityApplePeerToPeer => 'Apple peer-to-peer Wi-Fi';
+
+  @override
+  String get capabilityWifiDirect => 'Wi-Fi Direct';
+
+  @override
+  String get capabilityWifiAware => 'Wi-Fi Aware';
 
   @override
   String get capabilityBackground => 'Background discovery';
@@ -259,6 +279,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'A local-network route is available.';
 
   @override
+  String get capabilityLocalNetworkSocketBound =>
+      'QUIC is pinned to the current unmetered local network.';
+
+  @override
+  String get capabilityLocalNetworkMetered =>
+      'The current local network is metered; nearby mode will not use it for transfer.';
+
+  @override
+  String get capabilityLocalNetworkVpn =>
+      'The active local route includes a VPN; nearby mode will not use it.';
+
+  @override
+  String get capabilityLocalNetworkBindingFailed =>
+      'The local-network socket could not be pinned safely.';
+
+  @override
+  String get capabilityLocalNetworkNotPrepared =>
+      'The local-network socket has not been prepared yet.';
+
+  @override
+  String get capabilityLocalNetworkRestartRequired =>
+      'The local network changed; restart discovery to bind a new QUIC socket.';
+
+  @override
   String get capabilityEthernetConnected =>
       'A local-network route is available over Ethernet.';
 
@@ -269,6 +313,46 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get capabilityLocalNetworkPermissionRequired =>
       'Local-network permission has not been granted.';
+
+  @override
+  String get capabilityAppleP2PStarting =>
+      'Apple peer-to-peer Wi-Fi is starting.';
+
+  @override
+  String get capabilityAppleP2PReady =>
+      'Apple peer-to-peer Wi-Fi is ready and restricted to non-cellular Wi-Fi paths.';
+
+  @override
+  String get capabilityAppleP2PUnavailable =>
+      'Apple peer-to-peer Wi-Fi is temporarily unavailable on this device or network state.';
+
+  @override
+  String get capabilityAppleP2PFailed =>
+      'Apple peer-to-peer Wi-Fi failed; LAN discovery and transfer remain available.';
+
+  @override
+  String get capabilityAppleP2PStopped =>
+      'Apple peer-to-peer Wi-Fi is stopped.';
+
+  @override
+  String get capabilityAppleP2PIdentityFailed =>
+      'Apple peer-to-peer Wi-Fi could not create its temporary encrypted transport identity.';
+
+  @override
+  String get capabilityDirectProviderPending =>
+      'Platform support was detected, but the Halo provider is not implemented yet.';
+
+  @override
+  String get capabilityDirectUnsupported =>
+      'This platform or device does not expose this direct channel.';
+
+  @override
+  String get capabilityWifiAwareUnavailable =>
+      'Wi-Fi Aware is currently unavailable.';
+
+  @override
+  String get capabilityWifiAwarePermissionRequired =>
+      'Wi-Fi Aware permission or entitlement is required.';
 
   @override
   String get capabilityBackgroundRunning =>
@@ -439,4 +523,51 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get providerPresenceV6 => 'IPv6 Presence';
+
+  @override
+  String get transferIncomingTitle => 'Incoming file';
+
+  @override
+  String transferOfferDescription(String name, String size) {
+    return '$name · $size';
+  }
+
+  @override
+  String get transferAccept => 'Accept file';
+
+  @override
+  String get transferReject => 'Reject';
+
+  @override
+  String get transferSendFile => 'Send file';
+
+  @override
+  String get transferLanOnly =>
+      'Files use the authenticated local QUIC connection; BLE carries no file bytes.';
+
+  @override
+  String get transferAwaitingDecision => 'Waiting for the receiver';
+
+  @override
+  String get transferTransferring => 'Transferring';
+
+  @override
+  String get transferCompleted => 'Transfer complete';
+
+  @override
+  String get transferRejected => 'Transfer rejected';
+
+  @override
+  String get transferCancelled => 'Transfer cancelled';
+
+  @override
+  String get transferFailed => 'Transfer failed';
+
+  @override
+  String get transferCancel => 'Cancel transfer';
+
+  @override
+  String transferReceivedAt(String path) {
+    return 'Saved in private app storage: $path';
+  }
 }

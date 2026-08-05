@@ -73,6 +73,20 @@ connection and prevents a recorded Hello from authenticating a new connection.
 TLS 0-RTT is disabled for pairing and control messages. Pairing uses one ordered
 bidirectional stream and a strict state machine.
 
+### Admission and timing policy
+
+Pairing timings are product policy below protocol limits. The default core
+policy permits an 8-second connection attempt, a 60-second confirmation window,
+and a 2-second retry cooldown after a ceremony ends. Configuration validation
+bounds connection attempts to 1–30 seconds, confirmation to 10 seconds–5
+minutes, and retry cooldown to a nonzero value no greater than 60 seconds.
+
+Only one outbound ceremony may be active for a case-normalized discovery
+reference. A completed ceremony places that reference in a bounded in-memory
+cooldown table. This is resource and prompt-abuse control, not identity: the
+authenticated public-key-derived peer ID remains the authority. Repeated or
+concurrent connections for the same authenticated peer retain only one session.
+
 ### Short authentication code and trust commit
 
 The transcript hash covers the exporter and exact encoded ClientHello and
@@ -134,3 +148,8 @@ The crypto, identity-blob, and trust-store logic can be tested on every host;
 native adapters remain byte-storage shims. Android/macOS support remains
 experimental until those adapters and the complete foreground UI flow pass
 physical-device tests.
+
+The current cooldown is process-local and keyed by an untrusted discovery
+correlation value. A hostile peer can rotate rendezvous identifiers, so durable
+abuse controls may later add coarse, privacy-preserving radio/provider budgets;
+they must not turn discovery metadata into a trusted identity.

@@ -23,6 +23,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AuthenticatedSessionInfo dco_decode_authenticated_session_info(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -50,12 +53,20 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<AuthenticatedSessionInfo> dco_decode_list_authenticated_session_info(
+    dynamic raw,
+  );
+
+  @protected
   List<DiscoveryPeer> dco_decode_list_discovery_peer(dynamic raw);
 
   @protected
   List<DiscoveryProviderStatus> dco_decode_list_discovery_provider_status(
     dynamic raw,
   );
+
+  @protected
+  List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
 
   @protected
   List<PairingEvent> dco_decode_list_pairing_event(dynamic raw);
@@ -65,6 +76,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<TransferEvent> dco_decode_list_transfer_event(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -85,7 +99,27 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   PairingEventKind dco_decode_pairing_event_kind(dynamic raw);
 
   @protected
+  PlatformPairingChannelState dco_decode_platform_pairing_channel_state(
+    dynamic raw,
+  );
+
+  @protected
+  PlatformPairingRole dco_decode_platform_pairing_role(dynamic raw);
+
+  @protected
   PlatformProviderState dco_decode_platform_provider_state(dynamic raw);
+
+  @protected
+  PlatformTlsIdentity dco_decode_platform_tls_identity(dynamic raw);
+
+  @protected
+  TransferDirection dco_decode_transfer_direction(dynamic raw);
+
+  @protected
+  TransferEvent dco_decode_transfer_event(dynamic raw);
+
+  @protected
+  TransferEventKind dco_decode_transfer_event_kind(dynamic raw);
 
   @protected
   int dco_decode_u_16(dynamic raw);
@@ -104,6 +138,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
+
+  @protected
+  AuthenticatedSessionInfo sse_decode_authenticated_session_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
@@ -139,12 +178,22 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<AuthenticatedSessionInfo> sse_decode_list_authenticated_session_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<DiscoveryPeer> sse_decode_list_discovery_peer(
     SseDeserializer deserializer,
   );
 
   @protected
   List<DiscoveryProviderStatus> sse_decode_list_discovery_provider_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<Uint8List> sse_decode_list_list_prim_u_8_strict(
     SseDeserializer deserializer,
   );
 
@@ -158,6 +207,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<TransferEvent> sse_decode_list_transfer_event(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -178,7 +232,33 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   PairingEventKind sse_decode_pairing_event_kind(SseDeserializer deserializer);
 
   @protected
+  PlatformPairingChannelState sse_decode_platform_pairing_channel_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PlatformPairingRole sse_decode_platform_pairing_role(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PlatformProviderState sse_decode_platform_provider_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PlatformTlsIdentity sse_decode_platform_tls_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransferDirection sse_decode_transfer_direction(SseDeserializer deserializer);
+
+  @protected
+  TransferEvent sse_decode_transfer_event(SseDeserializer deserializer);
+
+  @protected
+  TransferEventKind sse_decode_transfer_event_kind(
     SseDeserializer deserializer,
   );
 
@@ -199,6 +279,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_authenticated_session_info(
+    AuthenticatedSessionInfo self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
@@ -237,6 +323,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_authenticated_session_info(
+    List<AuthenticatedSessionInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_discovery_peer(
     List<DiscoveryPeer> self,
     SseSerializer serializer,
@@ -245,6 +337,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   @protected
   void sse_encode_list_discovery_provider_status(
     List<DiscoveryProviderStatus> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_list_prim_u_8_strict(
+    List<Uint8List> self,
     SseSerializer serializer,
   );
 
@@ -260,6 +358,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_transfer_event(
+    List<TransferEvent> self,
     SseSerializer serializer,
   );
 
@@ -291,8 +395,41 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  void sse_encode_platform_pairing_channel_state(
+    PlatformPairingChannelState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_platform_pairing_role(
+    PlatformPairingRole self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_platform_provider_state(
     PlatformProviderState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_platform_tls_identity(
+    PlatformTlsIdentity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transfer_direction(
+    TransferDirection self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transfer_event(TransferEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_transfer_event_kind(
+    TransferEventKind self,
     SseSerializer serializer,
   );
 

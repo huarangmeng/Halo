@@ -5,6 +5,7 @@ members = [
     "crates/halo-discovery",
     "crates/halo-ffi",
     "crates/halo-protocol",
+    "crates/halo-transfer",
     "crates/halo-transport",
 ]
 resolver = "3"

@@ -9,9 +9,16 @@ Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Ru
 > 项目状态：早期实现阶段。仓库现在已有 Android、iOS 和 macOS 共用的 Flutter 发现
 > Demo，底层使用 Rust 发现核心与极薄的原生 BLE 驱动。Android ↔ macOS 已完成一次
 > 真机互测；iOS arm64 已编译通过，但仍待真机互通验证。目前还没有 SDK 发布版、
-> 安全文件传输实现或四端验证。实验性的 TLS 绑定配对协议、QUIC 监听与连接、受保护
+> 真机文件传输验证或四端验证。实验性的 TLS 绑定配对协议、QUIC 监听与连接、受保护
 > 身份存储、可信设备持久化和 Flutter 同意流程已经接入 Demo，并通过主机回环测试及
-> Android/macOS 编译检查，但尚未完成 Android ↔ macOS 配对真机验证。
+> Android、iOS Simulator、macOS 编译检查，但尚未完成 Android ↔ macOS 配对真机
+> 验证。LAN 配对后
+> QUIC 会话保留和 Rust 单文件校验/安全落盘核心已经实现；共享 Demo 也已接入
+> Android/macOS 原生文件选择、接收确认和取消流程，文件字节不经过 Dart。通用数据
+> 通道 Broker 已实现非计费本地路径、接口绑定声明、有界系统提示和认证后胜出策略。
+> Android 现在由 Kotlin 将固定到指定 OS Network 的 UDP socket 直接移交 Rust；没有
+> 合格非计费 LAN 时只监听 loopback。Apple/Windows LAN 精确绑定与 Direct/Aware
+> 适配器仍待完成。主机回环与主机构建已通过，但 Android ↔ macOS 真机文件传输仍未验证。
 
 Halo 不是 AirDrop 的实现，也不会尝试逆向 Apple 的私有技术栈。近期目标更小，也
 更容易验证：当两台设备都打开 Halo，并处于彼此可达的同一局域网时，它们能够互相
@@ -98,16 +105,23 @@ Flutter Demo / 第三方应用
 
 ## 平台预期
 
-| 平台 | MVP 发现方式 | MVP 传输方式 | 主要限制 |
+| 平台 | 发现方式 | 四端共同基线 | 点对点数据通道计划 |
 | --- | --- | --- | --- |
-| Android | BLE + 并行 LAN Provider | 局域网 QUIC | BLE、Wi-Fi、多播行为和权限会随系统及厂商变化 |
-| iOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | 受本地网络、蓝牙权限和后台执行限制影响 |
-| Windows | WinRT BLE + 并行 LAN Provider | 局域网 QUIC | 硬件、防火墙和网络配置可能限制部分 Provider |
-| macOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | 当前 Demo 仅支持 Apple Silicon；权限、沙盒与签名要求取决于分发方式 |
+| Android | BLE + 并行 LAN Provider | 局域网 QUIC | Wi-Fi Direct、Wi-Fi Aware |
+| iOS/iPadOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | Apple 点对点 Wi-Fi；受支持的 iOS/iPadOS 26 设备使用 Wi-Fi Aware |
+| Windows | WinRT BLE + 并行 LAN Provider | 局域网 QUIC | Wi-Fi Direct |
+| macOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | Apple 点对点 Wi-Fi |
 
 BLE 会合属于首批发现能力，在权限和硬件允许时与 LAN Provider 并行运行。它只广播
 最小化、可轮换的 Presence 信息，不负责传输文件，也不能单独证明设备身份。某个
 Provider 不可用时必须明确报告原因，其他 Provider 继续运行。
+
+Apple 点对点 Wi-Fi、Wi-Fi Direct 和 Wi-Fi Aware 是正式的数据通道 Provider，
+不是三套不同的文件协议。它们都只负责在同一套认证 QUIC 与传输协议下方建立合格的
+本地链路。每个平台组合在通过真机验收前仍标记为 `planned`；蜂窝网络和互联网不会
+成为隐式回退。完整设计见
+[`docs/architecture/data-channels.md`](docs/architecture/data-channels.md) 与
+[`ADR 0007`](docs/adr/0007-multi-bearer-data-channels.md)。
 
 在协议工作区稳定后，我们希望把 Linux 作为 Rust 核心和 CLI 的验证目标，但第一阶段
 的四端里程碑不包含 Linux Flutter Demo。
@@ -120,6 +134,8 @@ Halo 将设备发现、信任、传输和上层服务拆开，使各部分可以
 发现子系统的完整中文设计见
 [`docs/architecture/discovery.zh-CN.md`](docs/architecture/discovery.zh-CN.md)。该设计将
 BLE、mDNS、IPv4/IPv6 Presence、子网广播和已配对地址直探纳入首批并行能力。
+多承载数据通道设计见
+[`docs/architecture/data-channels.md`](docs/architecture/data-channels.md)。
 
 ```mermaid
 flowchart TB
@@ -127,7 +143,8 @@ flowchart TB
     FFI --> Core["halo-core\n会话编排 + 公共 SDK"]
     Core --> Discovery["halo-discovery\n候选设备发现"]
     Core --> Crypto["halo-crypto\n身份 + 配对 + 信任"]
-    Core --> Transport["halo-transport\n经过认证的 QUIC 会话"]
+    Core --> Channels["数据通道 Broker\nLAN · Apple P2P · Direct · Aware"]
+    Channels --> Transport["halo-transport\n经过认证的 QUIC 会话"]
     Core --> Transfer["halo-transfer\n请求 + 分块 + 续传"]
     Discovery --> Adapters["平台适配器\nAndroid · iOS · Windows · macOS"]
     Crypto --> Adapters
@@ -170,8 +187,8 @@ XCFramework。底层 crate 会被打进这些产物，业务方不需要感知�
 文件加载进内存，并在记录分块已经持久化之前完成校验。文件接收完成后，Halo 会根据
 清单再次校验，再将文件从私有暂存区移动到用户选择的位置。
 
-这种分层方式允许未来为部分平台加入 Wi-Fi Direct 等传输方式，而不必重新设计传输
-体验或公共服务 API。
+数据通道 Broker 会让局域网、Apple 点对点 Wi-Fi、Wi-Fi Direct 和 Wi-Fi Aware
+共用这套传输模型，而不必重新设计传输体验或公共服务 API。
 
 ## 发现、连接与信任
 
@@ -323,14 +340,19 @@ P-256、HKDF-SHA-256 和 `flutter_rust_bridge`（生成 Dart/Rust 绑定）。BL
 
 退出条件：发布 `0.1` SDK 预览版，明确兼容窗口，并公开协议规范。
 
-### Phase 4 — 近场平台能力实验
+### Phase 4 — 无基础设施数据通道
 
-- 在有价值且平台允许的情况下实现 BLE 辅助会合
+- Provider 基础已落地：四类 bearer、本地路径限定的有界候选竞速，以及带有
+  exporter 绑定 Swift/Rust 直连配对桥、可保留认证 QUIC group 和有界数据记录的
+  Apple Network.framework P2P 适配器（仍为 `planned`；传输接线与真机门槛待完成）
+- 为受支持的 Apple 设备组合实现 Apple 点对点 Wi-Fi Provider
+- 实现 Wi-Fi Direct Provider，并完成 Android ↔ Windows 互通矩阵
+- 为受支持的 Android 与 iOS/iPadOS 设备实现 Wi-Fi Aware Provider
+- 完成有界通道竞速、明确的能力 UI、资源释放与禁止蜂窝回退测试
 - 将剪贴板或小消息作为第二个协议消费者
-- 针对每个平台分别评估 Wi-Fi Direct/NAN、互联网会合和中继
-- 探索第三方实现和一致性测试
 
-这些是研究方向，不属于 MVP 承诺。
+这些 Provider 已纳入 Halo 的分阶段数据通道计划，但在通过文档规定的真机门槛前
+保持 `planned`。互联网会合、NAT 穿透、云端中继和用户账号仍是独立的非 MVP 研究项。
 
 ## 成功标准
 
@@ -374,7 +396,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 flutter analyze apps/halo_demo
-flutter test apps/halo_demo
+(cd apps/halo_demo && flutter test)
 ```
 
 Android、iOS 与 macOS 从 `apps/halo_demo` 启动同一个 Flutter 应用；原生 Launcher

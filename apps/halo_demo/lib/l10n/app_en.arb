@@ -39,6 +39,7 @@
   "pairingIdentityChanged": "Blocked: this device's identity changed",
   "pairingTimedOut": "Pairing timed out",
   "pairingFailed": "Secure pairing failed",
+  "pairingDisconnected": "Secure connection ended",
   "pairingAccept": "Codes match — accept",
   "pairingReject": "Reject",
   "connectionFailureTimeout": "Connection timed out before the peer responded.",
@@ -54,6 +55,8 @@
   "connectionFailurePersistence": "The trusted-device record could not be saved safely.",
   "connectionFailureUserInterface": "The pairing decision could not be completed by the app.",
   "connectionFailureInternal": "An internal connection task failed.",
+  "connectionSessionClosed": "The authenticated transport closed. Reconnect to start a new authenticated session.",
+  "connectionRetryRateLimited": "Wait briefly before retrying this device.",
   "connectionFailureUnknown": "Connection failed: {reason}",
   "@connectionFailureUnknown": {
     "placeholders": {"reason": {"type": "String"}}
@@ -66,6 +69,9 @@
   "capabilityBluetooth": "Bluetooth",
   "capabilityWifi": "Wi-Fi",
   "capabilityLocalNetwork": "Local network",
+  "capabilityApplePeerToPeer": "Apple peer-to-peer Wi-Fi",
+  "capabilityWifiDirect": "Wi-Fi Direct",
+  "capabilityWifiAware": "Wi-Fi Aware",
   "capabilityBackground": "Background discovery",
   "capabilityBluetoothReady": "Bluetooth is on and BLE scanning/advertising are available.",
   "capabilityBluetoothOff": "Bluetooth is turned off. Turn it on to discover over BLE.",
@@ -81,9 +87,25 @@
   "capabilityWifiNotConnected": "Wi-Fi is on but not connected to a network.",
   "capabilityWifiUnsupported": "Wi-Fi status is unavailable on this device.",
   "capabilityLocalNetworkConnected": "A local-network route is available.",
+  "capabilityLocalNetworkSocketBound": "QUIC is pinned to the current unmetered local network.",
+  "capabilityLocalNetworkMetered": "The current local network is metered; nearby mode will not use it for transfer.",
+  "capabilityLocalNetworkVpn": "The active local route includes a VPN; nearby mode will not use it.",
+  "capabilityLocalNetworkBindingFailed": "The local-network socket could not be pinned safely.",
+  "capabilityLocalNetworkNotPrepared": "The local-network socket has not been prepared yet.",
+  "capabilityLocalNetworkRestartRequired": "The local network changed; restart discovery to bind a new QUIC socket.",
   "capabilityEthernetConnected": "A local-network route is available over Ethernet.",
   "capabilityNoLocalNetwork": "No Wi-Fi or Ethernet local-network route is available; QUIC pairing cannot connect.",
   "capabilityLocalNetworkPermissionRequired": "Local-network permission has not been granted.",
+  "capabilityAppleP2PStarting": "Apple peer-to-peer Wi-Fi is starting.",
+  "capabilityAppleP2PReady": "Apple peer-to-peer Wi-Fi is ready and restricted to non-cellular Wi-Fi paths.",
+  "capabilityAppleP2PUnavailable": "Apple peer-to-peer Wi-Fi is temporarily unavailable on this device or network state.",
+  "capabilityAppleP2PFailed": "Apple peer-to-peer Wi-Fi failed; LAN discovery and transfer remain available.",
+  "capabilityAppleP2PStopped": "Apple peer-to-peer Wi-Fi is stopped.",
+  "capabilityAppleP2PIdentityFailed": "Apple peer-to-peer Wi-Fi could not create its temporary encrypted transport identity.",
+  "capabilityDirectProviderPending": "Platform support was detected, but the Halo provider is not implemented yet.",
+  "capabilityDirectUnsupported": "This platform or device does not expose this direct channel.",
+  "capabilityWifiAwareUnavailable": "Wi-Fi Aware is currently unavailable.",
+  "capabilityWifiAwarePermissionRequired": "Wi-Fi Aware permission or entitlement is required.",
   "capabilityBackgroundRunning": "Android foreground service is keeping discovery active off-screen.",
   "capabilityBackgroundStopped": "Background discovery service is stopped.",
   "capabilityBackgroundProcess": "Discovery continues while the macOS application process is running.",
@@ -159,5 +181,28 @@
   "providerFailedRecoverable": "failed; retry available",
   "providerFailed": "failed",
   "providerPresenceV4": "IPv4 Presence",
-  "providerPresenceV6": "IPv6 Presence"
+  "providerPresenceV6": "IPv6 Presence",
+  "transferIncomingTitle": "Incoming file",
+  "transferOfferDescription": "{name} · {size}",
+  "@transferOfferDescription": {
+    "placeholders": {
+      "name": {"type": "String"},
+      "size": {"type": "String"}
+    }
+  },
+  "transferAccept": "Accept file",
+  "transferReject": "Reject",
+  "transferSendFile": "Send file",
+  "transferLanOnly": "Files use the authenticated local QUIC connection; BLE carries no file bytes.",
+  "transferAwaitingDecision": "Waiting for the receiver",
+  "transferTransferring": "Transferring",
+  "transferCompleted": "Transfer complete",
+  "transferRejected": "Transfer rejected",
+  "transferCancelled": "Transfer cancelled",
+  "transferFailed": "Transfer failed",
+  "transferCancel": "Cancel transfer",
+  "transferReceivedAt": "Saved in private app storage: {path}",
+  "@transferReceivedAt": {
+    "placeholders": {"path": {"type": "String"}}
+  }
 }

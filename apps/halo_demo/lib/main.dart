@@ -151,6 +151,19 @@ class HaloDiscoveryPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 16),
                           ],
+                          if (controller.incomingTransferOffer
+                              case final offer?) ...[
+                            _IncomingTransferPanel(
+                              event: offer,
+                              onRespond: offer.requestId == null
+                                  ? null
+                                  : (accepted) => controller.respondToTransfer(
+                                      offer.requestId!,
+                                      accepted,
+                                    ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
                           if (controller.peers.isEmpty)
                             const _EmptyPeers()
                           else
@@ -368,11 +381,17 @@ class _PeerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final pairing = controller.pairingEventFor(peer);
-    final hasEndpoint =
-        peer.bestEndpoint != null || peer.candidateEndpoints.isNotEmpty;
+    final hasConnectablePath = controller.hasConnectablePathFor(peer);
     final pairingInProgress =
         pairing?.kind == PairingEventKind.connecting ||
         pairing?.kind == PairingEventKind.codeAvailable;
+    final lanSession = controller.lanSessionForPeer(peer);
+    final transfer = lanSession == null
+        ? null
+        : controller.transferForSession(lanSession.sessionId);
+    final transferInProgress =
+        transfer?.kind == TransferEventKind.awaitingDecision ||
+        transfer?.kind == TransferEventKind.transferring;
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -433,19 +452,53 @@ class _PeerCard extends StatelessWidget {
               const SizedBox(height: 12),
               _PairingSummary(event: pairing),
             ],
+            if (lanSession != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                l10n.transferLanOnly,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            if (transfer != null) ...[
+              const SizedBox(height: 10),
+              _TransferSummary(event: transfer),
+            ],
             const SizedBox(height: 12),
             Align(
               alignment: AlignmentDirectional.centerEnd,
-              child: FilledButton.icon(
-                onPressed:
-                    controller.canPair &&
-                        peer.compatible &&
-                        hasEndpoint &&
-                        !pairingInProgress
-                    ? () => controller.connectToPeer(peer)
-                    : null,
-                icon: const Icon(Icons.lock_outline),
-                label: Text(l10n.connectSecurely),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (lanSession != null)
+                    FilledButton.icon(
+                      onPressed:
+                          !transferInProgress && controller.platform != 'ios'
+                          ? () => controller.sendFileToPeer(peer)
+                          : null,
+                      icon: const Icon(Icons.upload_file_outlined),
+                      label: Text(l10n.transferSendFile),
+                    )
+                  else
+                    FilledButton.icon(
+                      onPressed:
+                          controller.canPair &&
+                              peer.compatible &&
+                              hasConnectablePath &&
+                              !pairingInProgress
+                          ? () => controller.connectToPeer(peer)
+                          : null,
+                      icon: const Icon(Icons.lock_outline),
+                      label: Text(l10n.connectSecurely),
+                    ),
+                  if (transferInProgress && transfer != null)
+                    OutlinedButton(
+                      onPressed: () =>
+                          controller.cancelTransfer(transfer.transferId),
+                      child: Text(l10n.transferCancel),
+                    ),
+                ],
               ),
             ),
           ],
@@ -453,6 +506,140 @@ class _PeerCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _IncomingTransferPanel extends StatelessWidget {
+  const _IncomingTransferPanel({required this.event, this.onRespond});
+
+  final TransferEvent event;
+  final ValueChanged<bool>? onRespond;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Card(
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.transferIncomingTitle,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.transferOfferDescription(
+                event.fileName,
+                _formatBytes(event.fileSize),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.transferLanOnly,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (onRespond != null) ...[
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => onRespond!(true),
+                    icon: const Icon(Icons.download_outlined),
+                    label: Text(l10n.transferAccept),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => onRespond!(false),
+                    child: Text(l10n.transferReject),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TransferSummary extends StatelessWidget {
+  const _TransferSummary({required this.event});
+
+  final TransferEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final status = switch (event.kind) {
+      TransferEventKind.offerReceived ||
+      TransferEventKind.awaitingDecision => l10n.transferAwaitingDecision,
+      TransferEventKind.transferring => l10n.transferTransferring,
+      TransferEventKind.completed => l10n.transferCompleted,
+      TransferEventKind.rejected => l10n.transferRejected,
+      TransferEventKind.cancelled => l10n.transferCancelled,
+      TransferEventKind.failed => l10n.transferFailed,
+    };
+    return Semantics(
+      liveRegion: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$status · ${event.fileName} · ${_formatBytes(event.fileSize)}'),
+          if (event.kind == TransferEventKind.transferring) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: event.fileSize == BigInt.zero
+                  ? null
+                  : (event.transferredBytes.toDouble() /
+                            event.fileSize.toDouble())
+                        .clamp(0.0, 1.0),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${_transferPercent(event)} · '
+              '${_formatBytes(event.transferredBytes)} / '
+              '${_formatBytes(event.fileSize)}',
+            ),
+          ],
+          if (event.finalPath case final path?) ...[
+            const SizedBox(height: 4),
+            SelectableText(l10n.transferReceivedAt(path)),
+          ],
+          if (event.detail case final detail?) ...[
+            const SizedBox(height: 4),
+            Text(
+              detail,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+String _formatBytes(BigInt bytes) {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  var value = bytes.toDouble();
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return unit == 0
+      ? '${bytes.toString()} ${units[unit]}'
+      : '${value.toStringAsFixed(value >= 10 ? 1 : 2)} ${units[unit]}';
+}
+
+String _transferPercent(TransferEvent event) {
+  if (event.fileSize == BigInt.zero) return '100%';
+  final percent =
+      (event.transferredBytes.toDouble() / event.fileSize.toDouble() * 100)
+          .clamp(0, 100)
+          .toStringAsFixed(0);
+  return '$percent%';
 }
 
 class _PairingPanel extends StatelessWidget {
@@ -562,6 +749,7 @@ String _pairingStatusLabel(AppLocalizations l10n, PairingEvent event) =>
       PairingEventKind.timedOut ||
       PairingEventKind.cancelled => l10n.pairingTimedOut,
       PairingEventKind.failed => l10n.pairingFailed,
+      PairingEventKind.disconnected => l10n.pairingDisconnected,
     };
 
 class _PeerField extends StatelessWidget {
@@ -760,44 +948,73 @@ String _capabilityNameLabel(AppLocalizations l10n, String name) =>
       'bluetooth' => l10n.capabilityBluetooth,
       'wifi' => l10n.capabilityWifi,
       'local_network' => l10n.capabilityLocalNetwork,
+      'apple_peer_to_peer' => l10n.capabilityApplePeerToPeer,
+      'wifi_direct' => l10n.capabilityWifiDirect,
+      'wifi_aware' => l10n.capabilityWifiAware,
       'background' => l10n.capabilityBackground,
       _ => name,
     };
 
-String _capabilityDetailLabel(AppLocalizations l10n, String detail) =>
-    switch (detail) {
-      'bluetooth_ready' || 'ble_ready' => l10n.capabilityBluetoothReady,
-      'bluetooth_powered_off' => l10n.capabilityBluetoothOff,
-      'bluetooth_permission_missing' || 'bluetooth_permission_not_requested' =>
-        l10n.capabilityBluetoothPermissionRequired,
-      'bluetooth_permission_denied' => l10n.capabilityBluetoothPermissionDenied,
-      'ble_unsupported' => l10n.capabilityBluetoothUnsupported,
-      'ble_advertising_unavailable' =>
-        l10n.capabilityBluetoothAdvertisingUnavailable,
-      'ble_operation_degraded' => l10n.capabilityBluetoothDegraded,
-      'bluetooth_resetting' => l10n.capabilityBluetoothResetting,
-      'bluetooth_state_checked_when_discovery_starts' =>
-        l10n.capabilityBluetoothPending,
-      'wifi_connected' => l10n.capabilityWifiConnected,
-      'wifi_powered_off' => l10n.capabilityWifiOff,
-      'wifi_not_connected' => l10n.capabilityWifiNotConnected,
-      'wifi_unsupported' => l10n.capabilityWifiUnsupported,
-      'wifi_state_permission_missing' ||
-      'wifi_state_unavailable' => l10n.capabilityWifiUnsupported,
-      'local_network_connected' => l10n.capabilityLocalNetworkConnected,
-      'ethernet_connected' => l10n.capabilityEthernetConnected,
-      'no_local_network_route' => l10n.capabilityNoLocalNetwork,
-      'local_network_permission_missing' =>
-        l10n.capabilityLocalNetworkPermissionRequired,
-      'network_state_permission_missing' =>
-        l10n.capabilityLocalNetworkPermissionRequired,
-      'network_state_unavailable' => l10n.capabilityNoLocalNetwork,
-      'foreground_service_running' => l10n.capabilityBackgroundRunning,
-      'foreground_service_stopped' => l10n.capabilityBackgroundStopped,
-      'application_process_background' => l10n.capabilityBackgroundProcess,
-      'foreground_only' => l10n.capabilityForegroundOnly,
-      _ => detail,
-    };
+String _capabilityDetailLabel(
+  AppLocalizations l10n,
+  String detail,
+) => switch (detail) {
+  'bluetooth_ready' || 'ble_ready' => l10n.capabilityBluetoothReady,
+  'bluetooth_powered_off' => l10n.capabilityBluetoothOff,
+  'bluetooth_permission_missing' || 'bluetooth_permission_not_requested' =>
+    l10n.capabilityBluetoothPermissionRequired,
+  'bluetooth_permission_denied' => l10n.capabilityBluetoothPermissionDenied,
+  'ble_unsupported' => l10n.capabilityBluetoothUnsupported,
+  'ble_advertising_unavailable' =>
+    l10n.capabilityBluetoothAdvertisingUnavailable,
+  'ble_operation_degraded' => l10n.capabilityBluetoothDegraded,
+  'bluetooth_resetting' => l10n.capabilityBluetoothResetting,
+  'bluetooth_state_checked_when_discovery_starts' =>
+    l10n.capabilityBluetoothPending,
+  'wifi_connected' => l10n.capabilityWifiConnected,
+  'wifi_powered_off' => l10n.capabilityWifiOff,
+  'wifi_not_connected' => l10n.capabilityWifiNotConnected,
+  'wifi_unsupported' => l10n.capabilityWifiUnsupported,
+  'wifi_state_permission_missing' ||
+  'wifi_state_unavailable' => l10n.capabilityWifiUnsupported,
+  'local_network_connected' => l10n.capabilityLocalNetworkConnected,
+  'local_network_socket_bound' => l10n.capabilityLocalNetworkSocketBound,
+  'local_network_metered' => l10n.capabilityLocalNetworkMetered,
+  'local_network_vpn' => l10n.capabilityLocalNetworkVpn,
+  'local_network_binding_failed' => l10n.capabilityLocalNetworkBindingFailed,
+  'local_network_not_prepared' => l10n.capabilityLocalNetworkNotPrepared,
+  'local_network_restart_required' =>
+    l10n.capabilityLocalNetworkRestartRequired,
+  'ethernet_connected' => l10n.capabilityEthernetConnected,
+  'no_local_network_route' => l10n.capabilityNoLocalNetwork,
+  'local_network_permission_missing' =>
+    l10n.capabilityLocalNetworkPermissionRequired,
+  'apple_p2p_starting' => l10n.capabilityAppleP2PStarting,
+  'apple_p2p_ready' => l10n.capabilityAppleP2PReady,
+  'apple_p2p_temporarily_unavailable' => l10n.capabilityAppleP2PUnavailable,
+  'apple_p2p_failed' => l10n.capabilityAppleP2PFailed,
+  'apple_p2p_stopped' => l10n.capabilityAppleP2PStopped,
+  'apple_p2p_identity_failed' => l10n.capabilityAppleP2PIdentityFailed,
+  'wifi_direct_provider_not_implemented' ||
+  'wifi_aware_provider_not_implemented' => l10n.capabilityDirectProviderPending,
+  'apple_p2p_unsupported_on_android' ||
+  'wifi_direct_unsupported' ||
+  'wifi_direct_unsupported_on_apple' ||
+  'wifi_aware_unsupported' ||
+  'wifi_aware_os_unsupported' ||
+  'wifi_aware_unsupported_on_macos' => l10n.capabilityDirectUnsupported,
+  'wifi_aware_unavailable' => l10n.capabilityWifiAwareUnavailable,
+  'wifi_aware_permission_required' =>
+    l10n.capabilityWifiAwarePermissionRequired,
+  'network_state_permission_missing' =>
+    l10n.capabilityLocalNetworkPermissionRequired,
+  'network_state_unavailable' => l10n.capabilityNoLocalNetwork,
+  'foreground_service_running' => l10n.capabilityBackgroundRunning,
+  'foreground_service_stopped' => l10n.capabilityBackgroundStopped,
+  'application_process_background' => l10n.capabilityBackgroundProcess,
+  'foreground_only' => l10n.capabilityForegroundOnly,
+  _ => detail,
+};
 
 String _pairingDetailLabel(AppLocalizations l10n, String detail) =>
     switch (detail) {
@@ -817,5 +1034,7 @@ String _pairingDetailLabel(AppLocalizations l10n, String detail) =>
       'persistence' => l10n.connectionFailurePersistence,
       'user_interface' => l10n.connectionFailureUserInterface,
       'connect_internal' => l10n.connectionFailureInternal,
+      'transport_closed' => l10n.connectionSessionClosed,
+      'retry_rate_limited' => l10n.connectionRetryRateLimited,
       _ => l10n.connectionFailureUnknown(detail),
     };

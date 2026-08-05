@@ -2,13 +2,20 @@ package org.halo.halo_demo
 
 import android.Manifest
 import android.bluetooth.BluetoothManager
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.net.wifi.aware.WifiAwareManager
 import android.os.Build
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.EventChannel
@@ -20,16 +27,27 @@ import org.halo.discovery.android.HaloBleProvider
 import org.halo.discovery.android.HaloWakeLanStatus
 
 class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
+    private data class LanRoute(
+        val network: Network,
+        val capabilities: NetworkCapabilities,
+    )
+
     private var eventSink: EventChannel.EventSink? = null
     private var provider: HaloBleProvider? = null
     private var permissionResult: MethodChannel.Result? = null
+    private var filePickerResult: MethodChannel.Result? = null
     private var providerTransition = false
     private var providerGeneration = 0L
+    private var lanSocketDetail = "local_network_not_prepared"
+    private var preparedNetworkHandle: Long? = null
+    private val observedLanRoutes = mutableMapOf<Network, NetworkCapabilities>()
+    private var lanNetworkCallback: ConnectivityManager.NetworkCallback? = null
     private lateinit var identityStore: HaloIdentityStore
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         identityStore = HaloIdentityStore(this)
+        ensureLanNetworkCallback()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler(::handleMethodCall)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, IDENTITY_CHANNEL)
@@ -56,9 +74,40 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         val granted = grantResults.isNotEmpty() &&
             grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         permissionResult?.success(
-            if (granted) preparationPayload() else preparationPayload("permission_denied"),
+            if (granted) {
+                prepareLanSocket()
+                preparationPayload()
+            } else {
+                preparationPayload("permission_denied")
+            },
         )
         permissionResult = null
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != FILE_PICK_REQUEST) return
+        val pendingResult = filePickerResult ?: return
+        filePickerResult = null
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            pendingResult.success(null)
+            return
+        }
+        Thread {
+            try {
+                val selected = HaloTransferStorage(this).copySelectedFile(uri)
+                runOnUiThread { pendingResult.success(selected) }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    pendingResult.error(
+                        "transfer-file-copy",
+                        "Selected file could not be copied into private transfer storage",
+                        null,
+                    )
+                }
+            }
+        }.start()
     }
 
     override fun onResume() {
@@ -67,9 +116,19 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     }
 
     override fun onDestroy() {
+        filePickerResult?.error("activity-destroyed", "Activity closed during file selection", null)
+        filePickerResult = null
         providerGeneration += 1
         provider?.close()
         provider = null
+        lanNetworkCallback?.let { callback ->
+            runCatching {
+                getSystemService(ConnectivityManager::class.java)
+                    ?.unregisterNetworkCallback(callback)
+            }
+        }
+        lanNetworkCallback = null
+        synchronized(observedLanRoutes) { observedLanRoutes.clear() }
         super.onDestroy()
     }
 
@@ -102,12 +161,43 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
                     result.success(null)
                 }
                 "trustStoreDirectory" -> result.success(identityStore.trustStoreDirectory)
+                "transferDirectories" -> result.success(HaloTransferStorage(this).directories())
+                "pickTransferFile" -> pickTransferFile(result)
+                "discardTransferSource" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("invalid-transfer-path", "Transfer source path is missing", null)
+                    } else {
+                        HaloTransferStorage(this).discardOutgoing(path)
+                        result.success(null)
+                    }
+                }
                 else -> result.notImplemented()
             }
+        } catch (error: TransferStorageException) {
+            result.error("transfer-storage", error.message, null)
         } catch (error: IdentityStorageException) {
             result.error("identity-storage", error.message, null)
         } catch (_: Exception) {
             result.error("identity-storage", "Protected identity storage failed", null)
+        }
+    }
+
+    private fun pickTransferFile(result: MethodChannel.Result) {
+        if (filePickerResult != null) {
+            result.error("file-picker-in-progress", "A file selection is already active", null)
+            return
+        }
+        filePickerResult = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            startActivityForResult(intent, FILE_PICK_REQUEST)
+        } catch (_: Exception) {
+            filePickerResult = null
+            result.error("file-picker-unavailable", "No document picker is available", null)
         }
     }
 
@@ -116,6 +206,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isEmpty()) {
+            prepareLanSocket()
             result.success(preparationPayload())
             return
         }
@@ -248,6 +339,9 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         bluetoothCapability(),
         wifiCapability(),
         localNetworkCapability(),
+        capability("apple_peer_to_peer", "unsupported", "apple_p2p_unsupported_on_android"),
+        wifiDirectCapability(),
+        wifiAwareCapability(),
         capability(
             "background",
             if (HaloDiscoveryForegroundService.running) "ready" else "stopped",
@@ -292,8 +386,10 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
                 return capability("wifi", "hardware_off", "wifi_powered_off")
             }
             val connectivity = getSystemService(ConnectivityManager::class.java)
-            val capabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
-            if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
+            val hasWifiNetwork = connectivity?.let(::lanRoutes)?.any { route ->
+                route.capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            } == true
+            if (hasWifiNetwork) {
                 capability("wifi", "ready", "wifi_connected")
             } else {
                 capability("wifi", "temporarily_unavailable", "wifi_not_connected")
@@ -313,20 +409,157 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
         return try {
             val connectivity = getSystemService(ConnectivityManager::class.java)
-            val networkCapabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
-            val hasLanTransport = networkCapabilities?.let {
-                it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                    it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-            } == true
-            if (hasLanTransport) {
-                capability("local_network", "ready", "local_network_connected")
+            if (lanSocketDetail != "local_network_socket_bound") {
+                return capability(
+                    "local_network",
+                    if (lanSocketDetail == "local_network_binding_failed") {
+                        "failed"
+                    } else {
+                        "temporarily_unavailable"
+                    },
+                    lanSocketDetail,
+                )
+            }
+            val preparedRoute = connectivity?.let(::lanRoutes)?.firstOrNull {
+                it.network.networkHandle == preparedNetworkHandle
+            }
+            if (preparedRoute != null && isEligibleLanRoute(preparedRoute.capabilities)) {
+                capability("local_network", "ready", "local_network_socket_bound")
             } else {
-                capability("local_network", "temporarily_unavailable", "no_local_network_route")
+                capability(
+                    "local_network",
+                    "temporarily_unavailable",
+                    "local_network_restart_required",
+                )
             }
         } catch (_: SecurityException) {
             capability("local_network", "permission_required", "network_state_permission_missing")
         } catch (_: RuntimeException) {
             capability("local_network", "temporarily_unavailable", "network_state_unavailable")
+        }
+    }
+
+    private fun prepareLanSocket() {
+        preparedNetworkHandle = null
+        try {
+            ensureLanNetworkCallback()
+            val connectivity = getSystemService(ConnectivityManager::class.java)
+            val routes = connectivity?.let(::lanRoutes).orEmpty()
+            val activeNetwork = connectivity?.activeNetwork
+            val selectedRoute = routes
+                .filter { isEligibleLanRoute(it.capabilities) }
+                .minByOrNull { if (it.network == activeNetwork) 0 else 1 }
+            if (selectedRoute == null) {
+                HaloNativeSocketBridge.disableLan()
+                lanSocketDetail = when {
+                    routes.isEmpty() -> "no_local_network_route"
+                    routes.all {
+                        it.capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                    } -> "local_network_vpn"
+                    else -> "local_network_metered"
+                }
+                return
+            }
+            DatagramSocket(null).use { socket ->
+                socket.reuseAddress = false
+                socket.bind(InetSocketAddress(0))
+                selectedRoute.network.bindSocket(socket)
+                if (!HaloNativeSocketBridge.registerBoundSocket(socket)) {
+                    HaloNativeSocketBridge.disableLan()
+                    lanSocketDetail = "local_network_binding_failed"
+                    return
+                }
+            }
+            preparedNetworkHandle = selectedRoute.network.networkHandle
+            lanSocketDetail = "local_network_socket_bound"
+        } catch (_: Exception) {
+            HaloNativeSocketBridge.disableLan()
+            lanSocketDetail = "local_network_binding_failed"
+        }
+    }
+
+    private fun lanRoutes(connectivity: ConnectivityManager): List<LanRoute> =
+        synchronized(observedLanRoutes) { observedLanRoutes.toMutableMap() }.also { routes ->
+            val activeNetwork = connectivity.activeNetwork
+            val activeCapabilities = connectivity.getNetworkCapabilities(activeNetwork)
+            if (activeNetwork != null &&
+                activeCapabilities != null &&
+                hasLanTransport(activeCapabilities)
+            ) {
+                routes[activeNetwork] = activeCapabilities
+            }
+        }.map { (network, capabilities) ->
+            LanRoute(network, capabilities)
+        }
+
+    private fun ensureLanNetworkCallback() {
+        if (lanNetworkCallback != null) return
+        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities,
+            ) {
+                synchronized(observedLanRoutes) {
+                    if (hasLanTransport(networkCapabilities)) {
+                        observedLanRoutes[network] = networkCapabilities
+                    } else {
+                        observedLanRoutes.remove(network)
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                synchronized(observedLanRoutes) { observedLanRoutes.remove(network) }
+            }
+        }
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+            .build()
+        try {
+            connectivity.registerNetworkCallback(request, callback)
+            lanNetworkCallback = callback
+        } catch (_: SecurityException) {
+            // Capability reporting will expose the missing permission.
+        } catch (_: RuntimeException) {
+            // Preparation fails closed to a loopback-only listener.
+        }
+    }
+
+    private fun hasLanTransport(capabilities: NetworkCapabilities): Boolean =
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+
+    private fun isEligibleLanRoute(capabilities: NetworkCapabilities): Boolean =
+        hasLanTransport(capabilities) &&
+            !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+
+    private fun wifiDirectCapability(): Map<String, String> =
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_DIRECT)) {
+            capability("wifi_direct", "stopped", "wifi_direct_provider_not_implemented")
+        } else {
+            capability("wifi_direct", "unsupported", "wifi_direct_unsupported")
+        }
+
+    private fun wifiAwareCapability(): Map<String, String> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            !packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_AWARE)
+        ) {
+            return capability("wifi_aware", "unsupported", "wifi_aware_unsupported")
+        }
+        return try {
+            val manager = getSystemService(WifiAwareManager::class.java)
+            if (manager?.isAvailable == true) {
+                capability("wifi_aware", "stopped", "wifi_aware_provider_not_implemented")
+            } else {
+                capability("wifi_aware", "temporarily_unavailable", "wifi_aware_unavailable")
+            }
+        } catch (_: SecurityException) {
+            capability("wifi_aware", "permission_required", "wifi_aware_permission_required")
+        } catch (_: RuntimeException) {
+            capability("wifi_aware", "temporarily_unavailable", "wifi_aware_unavailable")
         }
     }
 
@@ -361,6 +594,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         private const val EVENT_CHANNEL = "org.halo.discovery/ble-events"
         private const val IDENTITY_CHANNEL = "org.halo.identity/storage"
         private const val PERMISSION_REQUEST = 7101
+        private const val FILE_PICK_REQUEST = 7102
         private const val ACCESS_LOCAL_NETWORK_PERMISSION =
             "android.permission.ACCESS_LOCAL_NETWORK"
     }

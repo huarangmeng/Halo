@@ -112,6 +112,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingFailed => '安全配对失败';
 
   @override
+  String get pairingDisconnected => '安全连接已结束';
+
+  @override
   String get pairingAccept => '短码一致，接受';
 
   @override
@@ -157,6 +160,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connectionFailureInternal => '内部连接任务失败。';
 
   @override
+  String get connectionSessionClosed => '已认证传输通道已关闭，请重新连接并建立新的认证会话。';
+
+  @override
+  String get connectionRetryRateLimited => '请稍候再重新连接该设备。';
+
+  @override
   String connectionFailureUnknown(String reason) {
     return '连接失败：$reason';
   }
@@ -185,6 +194,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get capabilityLocalNetwork => '局域网';
+
+  @override
+  String get capabilityApplePeerToPeer => 'Apple 点对点 Wi-Fi';
+
+  @override
+  String get capabilityWifiDirect => 'Wi-Fi Direct';
+
+  @override
+  String get capabilityWifiAware => 'Wi-Fi Aware';
 
   @override
   String get capabilityBackground => '后台发现';
@@ -232,6 +250,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get capabilityLocalNetworkConnected => '当前有可用的局域网路由。';
 
   @override
+  String get capabilityLocalNetworkSocketBound => 'QUIC 已固定到当前非计费局域网。';
+
+  @override
+  String get capabilityLocalNetworkMetered => '当前局域网按流量计费；附近模式不会使用它传输文件。';
+
+  @override
+  String get capabilityLocalNetworkVpn => '当前局域网路由包含 VPN；附近模式不会使用它。';
+
+  @override
+  String get capabilityLocalNetworkBindingFailed => '无法将局域网 Socket 安全固定到当前网络。';
+
+  @override
+  String get capabilityLocalNetworkNotPrepared => '局域网 Socket 尚未准备。';
+
+  @override
+  String get capabilityLocalNetworkRestartRequired =>
+      '局域网已发生变化；请重启发现以绑定新的 QUIC Socket。';
+
+  @override
   String get capabilityEthernetConnected => '当前通过以太网连接局域网。';
 
   @override
@@ -239,6 +276,41 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get capabilityLocalNetworkPermissionRequired => '尚未授予本地网络权限。';
+
+  @override
+  String get capabilityAppleP2PStarting => 'Apple 点对点 Wi-Fi 正在启动。';
+
+  @override
+  String get capabilityAppleP2PReady =>
+      'Apple 点对点 Wi-Fi 已就绪，并且仅允许使用非蜂窝 Wi-Fi 路径。';
+
+  @override
+  String get capabilityAppleP2PUnavailable =>
+      '当前设备或网络状态下，Apple 点对点 Wi-Fi 暂时不可用。';
+
+  @override
+  String get capabilityAppleP2PFailed => 'Apple 点对点 Wi-Fi 启动失败；局域网发现和传输仍可继续使用。';
+
+  @override
+  String get capabilityAppleP2PStopped => 'Apple 点对点 Wi-Fi 已停止。';
+
+  @override
+  String get capabilityAppleP2PIdentityFailed =>
+      'Apple 点对点 Wi-Fi 无法创建临时的加密传输身份。';
+
+  @override
+  String get capabilityDirectProviderPending =>
+      '已检测到平台能力，但 Halo Provider 尚未实现。';
+
+  @override
+  String get capabilityDirectUnsupported => '当前平台或设备不提供该直连通道。';
+
+  @override
+  String get capabilityWifiAwareUnavailable => 'Wi-Fi Aware 当前不可用。';
+
+  @override
+  String get capabilityWifiAwarePermissionRequired =>
+      '需要 Wi-Fi Aware 权限或 entitlement。';
 
   @override
   String get capabilityBackgroundRunning => 'Android 前台服务正在让发现功能持续后台运行。';
@@ -400,4 +472,50 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get providerPresenceV6 => 'IPv6 Presence';
+
+  @override
+  String get transferIncomingTitle => '收到文件请求';
+
+  @override
+  String transferOfferDescription(String name, String size) {
+    return '$name · $size';
+  }
+
+  @override
+  String get transferAccept => '接收文件';
+
+  @override
+  String get transferReject => '拒绝';
+
+  @override
+  String get transferSendFile => '发送文件';
+
+  @override
+  String get transferLanOnly => '文件通过已认证的本地 QUIC 连接传输；蓝牙不承载文件数据。';
+
+  @override
+  String get transferAwaitingDecision => '等待对方确认';
+
+  @override
+  String get transferTransferring => '正在传输';
+
+  @override
+  String get transferCompleted => '传输完成';
+
+  @override
+  String get transferRejected => '已拒绝传输';
+
+  @override
+  String get transferCancelled => '已取消传输';
+
+  @override
+  String get transferFailed => '传输失败';
+
+  @override
+  String get transferCancel => '取消传输';
+
+  @override
+  String transferReceivedAt(String path) {
+    return '已保存到应用私有目录：$path';
+  }
 }

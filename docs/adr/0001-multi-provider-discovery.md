@@ -28,7 +28,8 @@ observations by a rotating `PresenceId`:
 3. Halo Presence Protocol over IPv4 and IPv6 scoped multicast
 4. Halo Presence Protocol over each eligible IPv4 directed-broadcast address
 5. Direct presence probes to remembered discovery endpoints
-6. Platform proximity providers, such as Android Wi-Fi Aware, when runtime
+6. Platform proximity providers that can also establish data paths, including
+   Apple peer-to-peer Wi-Fi, Wi-Fi Direct, and Wi-Fi Aware, when runtime
    capability and interoperability are proven
 
 The first five form the required discovery baseline. Rust implements the LAN
@@ -83,3 +84,7 @@ Network-change-driven socket rebuilding, Android multicast-lock ownership, iOS
 Bonjour declarations, BLE adapters, and per-source packet rate limits are
 required implementation work. The current crate must be described as an
 experimental core until those behaviors pass real-device tests.
+
+Provider-specific data-path behavior is defined by
+[ADR 0007](0007-multi-bearer-data-channels.md); this ADR remains limited to
+rendezvous observations and endpoint evidence.

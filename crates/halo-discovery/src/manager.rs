@@ -597,7 +597,7 @@ mod tests {
     }
 
     fn endpoint(last: u8) -> Endpoint {
-        Endpoint::quic(SocketAddr::from(([192, 0, 2, last], 4433)))
+        Endpoint::quic(SocketAddr::from(([192, 168, 2, last], 4433)))
             .unwrap_or_else(|error| panic!("test endpoint: {error}"))
     }
 

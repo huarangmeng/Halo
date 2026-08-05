@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1651455156;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -636126895;
 
 // Section: executor
 
@@ -297,6 +297,119 @@ fn wire__crate__api__discovery_submit_ble_impl(
         },
     )
 }
+fn wire__crate__api__pairing_api__pairing_attach_platform_channel_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_attach_platform_channel",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_peer_presence_id = <Option<String>>::sse_decode(&mut deserializer);
+            let api_role =
+                <crate::api::pairing_api::PlatformPairingRole>::sse_decode(&mut deserializer);
+            let api_channel_binding = <Vec<u8>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_attach_platform_channel(
+                        api_session_id,
+                        api_peer_presence_id,
+                        api_role,
+                        api_channel_binding,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_authenticated_sessions_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_authenticated_sessions",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok =
+                        crate::api::pairing_api::pairing_authenticated_sessions(api_session_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_close_platform_channel_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_close_platform_channel",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_channel_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_close_platform_channel(
+                        api_session_id,
+                        api_channel_id,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__pairing_api__pairing_connect_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -336,6 +449,78 @@ fn wire__crate__api__pairing_api__pairing_connect_impl(
         },
     )
 }
+fn wire__crate__api__pairing_api__pairing_create_platform_tls_identity_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_create_platform_tls_identity",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok =
+                        crate::api::pairing_api::pairing_create_platform_tls_identity()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_drain_platform_frames_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_drain_platform_frames",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_channel_id = <u64>::sse_decode(&mut deserializer);
+            let api_maximum_frames = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_drain_platform_frames(
+                        api_session_id,
+                        api_channel_id,
+                        api_maximum_frames,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__pairing_api__pairing_events_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -366,6 +551,43 @@ fn wire__crate__api__pairing_api__pairing_events_impl(
                     let output_ok = crate::api::pairing_api::pairing_events(
                         api_session_id,
                         api_after_event_id,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_platform_channel_state_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_platform_channel_state",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_channel_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_platform_channel_state(
+                        api_session_id,
+                        api_channel_id,
                     )?;
                     Ok(output_ok)
                 })())
@@ -482,6 +704,203 @@ fn wire__crate__api__pairing_api__pairing_stop_impl(
         },
     )
 }
+fn wire__crate__api__pairing_api__pairing_submit_platform_frame_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_submit_platform_frame",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_channel_id = <u64>::sse_decode(&mut deserializer);
+            let api_frame = <Vec<u8>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_submit_platform_frame(
+                        api_session_id,
+                        api_channel_id,
+                        api_frame,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_transfer_cancel_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_transfer_cancel",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_transfer_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_transfer_cancel(
+                        api_session_id,
+                        api_transfer_id,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_transfer_events_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_transfer_events",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_after_event_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_transfer_events(
+                        api_session_id,
+                        api_after_event_id,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_transfer_respond_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_transfer_respond",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_request_id = <u64>::sse_decode(&mut deserializer);
+            let api_accepted = <bool>::sse_decode(&mut deserializer);
+            let api_staging_directory = <Option<String>>::sse_decode(&mut deserializer);
+            let api_destination_directory = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_transfer_respond(
+                        api_session_id,
+                        api_request_id,
+                        api_accepted,
+                        api_staging_directory,
+                        api_destination_directory,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__pairing_api__pairing_transfer_send_file_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pairing_transfer_send_file",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_authenticated_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_source_path = <String>::sse_decode(&mut deserializer);
+            let api_advertised_name = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::HaloApiError>((move || {
+                    let output_ok = crate::api::pairing_api::pairing_transfer_send_file(
+                        api_session_id,
+                        api_authenticated_session_id,
+                        api_source_path,
+                        api_advertised_name,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 
 // Section: dart2rust
 
@@ -490,6 +909,20 @@ impl SseDecode for String {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <Vec<u8>>::sse_decode(deserializer);
         return String::from_utf8(inner).unwrap();
+    }
+}
+
+impl SseDecode for crate::api::pairing_api::AuthenticatedSessionInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <u64>::sse_decode(deserializer);
+        let mut var_peerFingerprint = <String>::sse_decode(deserializer);
+        let mut var_peerPresenceId = <Option<String>>::sse_decode(deserializer);
+        return crate::api::pairing_api::AuthenticatedSessionInfo {
+            session_id: var_sessionId,
+            peer_fingerprint: var_peerFingerprint,
+            peer_presence_id: var_peerPresenceId,
+        };
     }
 }
 
@@ -623,6 +1056,20 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::api::pairing_api::AuthenticatedSessionInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(
+                <crate::api::pairing_api::AuthenticatedSessionInfo>::sse_decode(deserializer),
+            );
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::DiscoveryPeer> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -649,6 +1096,18 @@ impl SseDecode for Vec<crate::api::DiscoveryProviderStatus> {
     }
 }
 
+impl SseDecode for Vec<Vec<u8>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<Vec<u8>>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::pairing_api::PairingEvent> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -670,6 +1129,20 @@ impl SseDecode for Vec<u8> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<u8>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::pairing_api::TransferEvent> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::pairing_api::TransferEvent>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -732,6 +1205,7 @@ impl SseDecode for crate::api::pairing_api::PairingEvent {
         let mut var_peerFingerprint = <Option<String>>::sse_decode(deserializer);
         let mut var_shortCode = <Option<String>>::sse_decode(deserializer);
         let mut var_alreadyTrusted = <bool>::sse_decode(deserializer);
+        let mut var_authenticatedSessionId = <Option<u64>>::sse_decode(deserializer);
         let mut var_detail = <Option<String>>::sse_decode(deserializer);
         return crate::api::pairing_api::PairingEvent {
             event_id: var_eventId,
@@ -741,6 +1215,7 @@ impl SseDecode for crate::api::pairing_api::PairingEvent {
             peer_fingerprint: var_peerFingerprint,
             short_code: var_shortCode,
             already_trusted: var_alreadyTrusted,
+            authenticated_session_id: var_authenticatedSessionId,
             detail: var_detail,
         };
     }
@@ -760,7 +1235,33 @@ impl SseDecode for crate::api::pairing_api::PairingEventKind {
             6 => crate::api::pairing_api::PairingEventKind::TimedOut,
             7 => crate::api::pairing_api::PairingEventKind::Cancelled,
             8 => crate::api::pairing_api::PairingEventKind::Failed,
+            9 => crate::api::pairing_api::PairingEventKind::Disconnected,
             _ => unreachable!("Invalid variant for PairingEventKind: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::pairing_api::PlatformPairingChannelState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::pairing_api::PlatformPairingChannelState::Pending,
+            1 => crate::api::pairing_api::PlatformPairingChannelState::Authenticated,
+            2 => crate::api::pairing_api::PlatformPairingChannelState::Failed,
+            _ => unreachable!("Invalid variant for PlatformPairingChannelState: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::pairing_api::PlatformPairingRole {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::pairing_api::PlatformPairingRole::Initiator,
+            1 => crate::api::pairing_api::PlatformPairingRole::Responder,
+            _ => unreachable!("Invalid variant for PlatformPairingRole: {}", inner),
         };
     }
 }
@@ -780,6 +1281,78 @@ impl SseDecode for crate::api::PlatformProviderState {
             7 => crate::api::PlatformProviderState::TemporarilyUnavailable,
             8 => crate::api::PlatformProviderState::Stopped,
             _ => unreachable!("Invalid variant for PlatformProviderState: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::pairing_api::PlatformTlsIdentity {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_certificateDer = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_privateKeyX963 = <Vec<u8>>::sse_decode(deserializer);
+        return crate::api::pairing_api::PlatformTlsIdentity {
+            certificate_der: var_certificateDer,
+            private_key_x963: var_privateKeyX963,
+        };
+    }
+}
+
+impl SseDecode for crate::api::pairing_api::TransferDirection {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::pairing_api::TransferDirection::Sending,
+            1 => crate::api::pairing_api::TransferDirection::Receiving,
+            _ => unreachable!("Invalid variant for TransferDirection: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::pairing_api::TransferEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_eventId = <u64>::sse_decode(deserializer);
+        let mut var_requestId = <Option<u64>>::sse_decode(deserializer);
+        let mut var_authenticatedSessionId = <u64>::sse_decode(deserializer);
+        let mut var_transferId = <String>::sse_decode(deserializer);
+        let mut var_direction =
+            <crate::api::pairing_api::TransferDirection>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::pairing_api::TransferEventKind>::sse_decode(deserializer);
+        let mut var_fileName = <String>::sse_decode(deserializer);
+        let mut var_fileSize = <u64>::sse_decode(deserializer);
+        let mut var_transferredBytes = <u64>::sse_decode(deserializer);
+        let mut var_finalPath = <Option<String>>::sse_decode(deserializer);
+        let mut var_detail = <Option<String>>::sse_decode(deserializer);
+        return crate::api::pairing_api::TransferEvent {
+            event_id: var_eventId,
+            request_id: var_requestId,
+            authenticated_session_id: var_authenticatedSessionId,
+            transfer_id: var_transferId,
+            direction: var_direction,
+            kind: var_kind,
+            file_name: var_fileName,
+            file_size: var_fileSize,
+            transferred_bytes: var_transferredBytes,
+            final_path: var_finalPath,
+            detail: var_detail,
+        };
+    }
+}
+
+impl SseDecode for crate::api::pairing_api::TransferEventKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::pairing_api::TransferEventKind::OfferReceived,
+            1 => crate::api::pairing_api::TransferEventKind::AwaitingDecision,
+            2 => crate::api::pairing_api::TransferEventKind::Transferring,
+            3 => crate::api::pairing_api::TransferEventKind::Completed,
+            4 => crate::api::pairing_api::TransferEventKind::Rejected,
+            5 => crate::api::pairing_api::TransferEventKind::Cancelled,
+            6 => crate::api::pairing_api::TransferEventKind::Failed,
+            _ => unreachable!("Invalid variant for TransferEventKind: {}", inner),
         };
     }
 }
@@ -835,13 +1408,81 @@ fn pde_ffi_dispatcher_primary_impl(
         5 => wire__crate__api__discovery_start_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__discovery_stop_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__discovery_submit_ble_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__pairing_api__pairing_connect_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__pairing_api__pairing_events_impl(port, ptr, rust_vec_len, data_len),
-        10 => {
+        8 => wire__crate__api__pairing_api__pairing_attach_platform_channel_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        9 => wire__crate__api__pairing_api__pairing_authenticated_sessions_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        10 => wire__crate__api__pairing_api__pairing_close_platform_channel_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        11 => {
+            wire__crate__api__pairing_api__pairing_connect_impl(port, ptr, rust_vec_len, data_len)
+        }
+        12 => wire__crate__api__pairing_api__pairing_create_platform_tls_identity_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        13 => wire__crate__api__pairing_api__pairing_drain_platform_frames_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        14 => wire__crate__api__pairing_api__pairing_events_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__pairing_api__pairing_platform_channel_state_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        16 => {
             wire__crate__api__pairing_api__pairing_respond_impl(port, ptr, rust_vec_len, data_len)
         }
-        11 => wire__crate__api__pairing_api__pairing_start_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__pairing_api__pairing_stop_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__pairing_api__pairing_start_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__pairing_api__pairing_stop_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__pairing_api__pairing_submit_platform_frame_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        20 => wire__crate__api__pairing_api__pairing_transfer_cancel_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        21 => wire__crate__api__pairing_api__pairing_transfer_events_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        22 => wire__crate__api__pairing_api__pairing_transfer_respond_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        23 => wire__crate__api__pairing_api__pairing_transfer_send_file_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
         _ => unreachable!(),
     }
 }
@@ -860,6 +1501,28 @@ fn pde_ffi_dispatcher_sync_impl(
 
 // Section: rust2dart
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::AuthenticatedSessionInfo {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.peer_fingerprint.into_into_dart().into_dart(),
+            self.peer_presence_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pairing_api::AuthenticatedSessionInfo
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::AuthenticatedSessionInfo>
+    for crate::api::pairing_api::AuthenticatedSessionInfo
+{
+    fn into_into_dart(self) -> crate::api::pairing_api::AuthenticatedSessionInfo {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::DiscoveryBootstrap {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -1011,6 +1674,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::PairingEvent {
             self.peer_fingerprint.into_into_dart().into_dart(),
             self.short_code.into_into_dart().into_dart(),
             self.already_trusted.into_into_dart().into_dart(),
+            self.authenticated_session_id.into_into_dart().into_dart(),
             self.detail.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -1040,6 +1704,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::PairingEventKind
             Self::TimedOut => 6.into_dart(),
             Self::Cancelled => 7.into_dart(),
             Self::Failed => 8.into_dart(),
+            Self::Disconnected => 9.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -1052,6 +1717,49 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::PairingEventKind
     for crate::api::pairing_api::PairingEventKind
 {
     fn into_into_dart(self) -> crate::api::pairing_api::PairingEventKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::PlatformPairingChannelState {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Pending => 0.into_dart(),
+            Self::Authenticated => 1.into_dart(),
+            Self::Failed => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pairing_api::PlatformPairingChannelState
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::PlatformPairingChannelState>
+    for crate::api::pairing_api::PlatformPairingChannelState
+{
+    fn into_into_dart(self) -> crate::api::pairing_api::PlatformPairingChannelState {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::PlatformPairingRole {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Initiator => 0.into_dart(),
+            Self::Responder => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pairing_api::PlatformPairingRole
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::PlatformPairingRole>
+    for crate::api::pairing_api::PlatformPairingRole
+{
+    fn into_into_dart(self) -> crate::api::pairing_api::PlatformPairingRole {
         self
     }
 }
@@ -1083,11 +1791,118 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::PlatformProviderState>
         self
     }
 }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::PlatformTlsIdentity {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.certificate_der.into_into_dart().into_dart(),
+            self.private_key_x963.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pairing_api::PlatformTlsIdentity
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::PlatformTlsIdentity>
+    for crate::api::pairing_api::PlatformTlsIdentity
+{
+    fn into_into_dart(self) -> crate::api::pairing_api::PlatformTlsIdentity {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::TransferDirection {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Sending => 0.into_dart(),
+            Self::Receiving => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pairing_api::TransferDirection
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::TransferDirection>
+    for crate::api::pairing_api::TransferDirection
+{
+    fn into_into_dart(self) -> crate::api::pairing_api::TransferDirection {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::TransferEvent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.event_id.into_into_dart().into_dart(),
+            self.request_id.into_into_dart().into_dart(),
+            self.authenticated_session_id.into_into_dart().into_dart(),
+            self.transfer_id.into_into_dart().into_dart(),
+            self.direction.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.file_name.into_into_dart().into_dart(),
+            self.file_size.into_into_dart().into_dart(),
+            self.transferred_bytes.into_into_dart().into_dart(),
+            self.final_path.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pairing_api::TransferEvent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::TransferEvent>
+    for crate::api::pairing_api::TransferEvent
+{
+    fn into_into_dart(self) -> crate::api::pairing_api::TransferEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::pairing_api::TransferEventKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::OfferReceived => 0.into_dart(),
+            Self::AwaitingDecision => 1.into_dart(),
+            Self::Transferring => 2.into_dart(),
+            Self::Completed => 3.into_dart(),
+            Self::Rejected => 4.into_dart(),
+            Self::Cancelled => 5.into_dart(),
+            Self::Failed => 6.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::pairing_api::TransferEventKind
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::pairing_api::TransferEventKind>
+    for crate::api::pairing_api::TransferEventKind
+{
+    fn into_into_dart(self) -> crate::api::pairing_api::TransferEventKind {
+        self
+    }
+}
 
 impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<u8>>::sse_encode(self.into_bytes(), serializer);
+    }
+}
+
+impl SseEncode for crate::api::pairing_api::AuthenticatedSessionInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.peer_fingerprint, serializer);
+        <Option<String>>::sse_encode(self.peer_presence_id, serializer);
     }
 }
 
@@ -1195,6 +2010,16 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::api::pairing_api::AuthenticatedSessionInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::pairing_api::AuthenticatedSessionInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::DiscoveryPeer> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1215,6 +2040,16 @@ impl SseEncode for Vec<crate::api::DiscoveryProviderStatus> {
     }
 }
 
+impl SseEncode for Vec<Vec<u8>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <Vec<u8>>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::pairing_api::PairingEvent> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1231,6 +2066,16 @@ impl SseEncode for Vec<u8> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <u8>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::pairing_api::TransferEvent> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::pairing_api::TransferEvent>::sse_encode(item, serializer);
         }
     }
 }
@@ -1284,6 +2129,7 @@ impl SseEncode for crate::api::pairing_api::PairingEvent {
         <Option<String>>::sse_encode(self.peer_fingerprint, serializer);
         <Option<String>>::sse_encode(self.short_code, serializer);
         <bool>::sse_encode(self.already_trusted, serializer);
+        <Option<u64>>::sse_encode(self.authenticated_session_id, serializer);
         <Option<String>>::sse_encode(self.detail, serializer);
     }
 }
@@ -1302,6 +2148,40 @@ impl SseEncode for crate::api::pairing_api::PairingEventKind {
                 crate::api::pairing_api::PairingEventKind::TimedOut => 6,
                 crate::api::pairing_api::PairingEventKind::Cancelled => 7,
                 crate::api::pairing_api::PairingEventKind::Failed => 8,
+                crate::api::pairing_api::PairingEventKind::Disconnected => 9,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::pairing_api::PlatformPairingChannelState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::pairing_api::PlatformPairingChannelState::Pending => 0,
+                crate::api::pairing_api::PlatformPairingChannelState::Authenticated => 1,
+                crate::api::pairing_api::PlatformPairingChannelState::Failed => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::pairing_api::PlatformPairingRole {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::pairing_api::PlatformPairingRole::Initiator => 0,
+                crate::api::pairing_api::PlatformPairingRole::Responder => 1,
                 _ => {
                     unimplemented!("");
                 }
@@ -1325,6 +2205,68 @@ impl SseEncode for crate::api::PlatformProviderState {
                 crate::api::PlatformProviderState::Unsupported => 6,
                 crate::api::PlatformProviderState::TemporarilyUnavailable => 7,
                 crate::api::PlatformProviderState::Stopped => 8,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::pairing_api::PlatformTlsIdentity {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<u8>>::sse_encode(self.certificate_der, serializer);
+        <Vec<u8>>::sse_encode(self.private_key_x963, serializer);
+    }
+}
+
+impl SseEncode for crate::api::pairing_api::TransferDirection {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::pairing_api::TransferDirection::Sending => 0,
+                crate::api::pairing_api::TransferDirection::Receiving => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::pairing_api::TransferEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.event_id, serializer);
+        <Option<u64>>::sse_encode(self.request_id, serializer);
+        <u64>::sse_encode(self.authenticated_session_id, serializer);
+        <String>::sse_encode(self.transfer_id, serializer);
+        <crate::api::pairing_api::TransferDirection>::sse_encode(self.direction, serializer);
+        <crate::api::pairing_api::TransferEventKind>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.file_name, serializer);
+        <u64>::sse_encode(self.file_size, serializer);
+        <u64>::sse_encode(self.transferred_bytes, serializer);
+        <Option<String>>::sse_encode(self.final_path, serializer);
+        <Option<String>>::sse_encode(self.detail, serializer);
+    }
+}
+
+impl SseEncode for crate::api::pairing_api::TransferEventKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::pairing_api::TransferEventKind::OfferReceived => 0,
+                crate::api::pairing_api::TransferEventKind::AwaitingDecision => 1,
+                crate::api::pairing_api::TransferEventKind::Transferring => 2,
+                crate::api::pairing_api::TransferEventKind::Completed => 3,
+                crate::api::pairing_api::TransferEventKind::Rejected => 4,
+                crate::api::pairing_api::TransferEventKind::Cancelled => 5,
+                crate::api::pairing_api::TransferEventKind::Failed => 6,
                 _ => {
                     unimplemented!("");
                 }

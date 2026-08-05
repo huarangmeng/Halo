@@ -60,6 +60,10 @@ authorization, or transport security decisions.
   on goodbye and must expire all observations by TTL.
 - Source IP plus the advertised QUIC port forms the candidate endpoint. No IP
   address is carried inside the packet.
+- Transfer v1 accepts only loopback (tests), RFC 1918, IPv4 link-local, IPv6
+  link-local, and IPv6 unique-local candidates. A global address is rejected
+  until Halo can bind it to the LAN interface that produced the observation;
+  cellular and public-network fallback is not part of the protocol.
 - Implementations ignore their own `PresenceId`.
 
 All fields are attacker-controlled until the later secure transport handshake

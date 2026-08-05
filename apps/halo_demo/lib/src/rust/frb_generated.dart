@@ -67,7 +67,7 @@ class HaloRustLib
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1651455156;
+  int get rustContentHash => -636126895;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -112,15 +112,45 @@ abstract class HaloRustLibApi extends BaseApi {
     required List<int> descriptor,
   });
 
+  Future<BigInt> crateApiPairingApiPairingAttachPlatformChannel({
+    required BigInt sessionId,
+    String? peerPresenceId,
+    required PlatformPairingRole role,
+    required List<int> channelBinding,
+  });
+
+  Future<List<AuthenticatedSessionInfo>>
+  crateApiPairingApiPairingAuthenticatedSessions({required BigInt sessionId});
+
+  Future<void> crateApiPairingApiPairingClosePlatformChannel({
+    required BigInt sessionId,
+    required BigInt channelId,
+  });
+
   Future<void> crateApiPairingApiPairingConnect({
     required BigInt sessionId,
     required String peerPresenceId,
     required List<String> endpoints,
   });
 
+  Future<PlatformTlsIdentity>
+  crateApiPairingApiPairingCreatePlatformTlsIdentity();
+
+  Future<List<Uint8List>> crateApiPairingApiPairingDrainPlatformFrames({
+    required BigInt sessionId,
+    required BigInt channelId,
+    required int maximumFrames,
+  });
+
   Future<List<PairingEvent>> crateApiPairingApiPairingEvents({
     required BigInt sessionId,
     required BigInt afterEventId,
+  });
+
+  Future<PlatformPairingChannelState>
+  crateApiPairingApiPairingPlatformChannelState({
+    required BigInt sessionId,
+    required BigInt channelId,
   });
 
   Future<void> crateApiPairingApiPairingRespond({
@@ -135,6 +165,37 @@ abstract class HaloRustLibApi extends BaseApi {
   });
 
   Future<void> crateApiPairingApiPairingStop({required BigInt sessionId});
+
+  Future<void> crateApiPairingApiPairingSubmitPlatformFrame({
+    required BigInt sessionId,
+    required BigInt channelId,
+    required List<int> frame,
+  });
+
+  Future<void> crateApiPairingApiPairingTransferCancel({
+    required BigInt sessionId,
+    required String transferId,
+  });
+
+  Future<List<TransferEvent>> crateApiPairingApiPairingTransferEvents({
+    required BigInt sessionId,
+    required BigInt afterEventId,
+  });
+
+  Future<void> crateApiPairingApiPairingTransferRespond({
+    required BigInt sessionId,
+    required BigInt requestId,
+    required bool accepted,
+    String? stagingDirectory,
+    String? destinationDirectory,
+  });
+
+  Future<String> crateApiPairingApiPairingTransferSendFile({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+    required String sourcePath,
+    String? advertisedName,
+  });
 }
 
 class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
@@ -384,6 +445,112 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   );
 
   @override
+  Future<BigInt> crateApiPairingApiPairingAttachPlatformChannel({
+    required BigInt sessionId,
+    String? peerPresenceId,
+    required PlatformPairingRole role,
+    required List<int> channelBinding,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_opt_String(peerPresenceId, serializer);
+          sse_encode_platform_pairing_role(role, serializer);
+          sse_encode_list_prim_u_8_loose(channelBinding, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_64,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingAttachPlatformChannelConstMeta,
+        argValues: [sessionId, peerPresenceId, role, channelBinding],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingAttachPlatformChannelConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_attach_platform_channel",
+        argNames: ["sessionId", "peerPresenceId", "role", "channelBinding"],
+      );
+
+  @override
+  Future<List<AuthenticatedSessionInfo>>
+  crateApiPairingApiPairingAuthenticatedSessions({required BigInt sessionId}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 9,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_authenticated_session_info,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingAuthenticatedSessionsConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingAuthenticatedSessionsConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_authenticated_sessions",
+        argNames: ["sessionId"],
+      );
+
+  @override
+  Future<void> crateApiPairingApiPairingClosePlatformChannel({
+    required BigInt sessionId,
+    required BigInt channelId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(channelId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingClosePlatformChannelConstMeta,
+        argValues: [sessionId, channelId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingClosePlatformChannelConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_close_platform_channel",
+        argNames: ["sessionId", "channelId"],
+      );
+
+  @override
   Future<void> crateApiPairingApiPairingConnect({
     required BigInt sessionId,
     required String peerPresenceId,
@@ -399,7 +566,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 11,
             port: port_,
           );
         },
@@ -421,6 +588,75 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       );
 
   @override
+  Future<PlatformTlsIdentity>
+  crateApiPairingApiPairingCreatePlatformTlsIdentity() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_platform_tls_identity,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingCreatePlatformTlsIdentityConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPairingApiPairingCreatePlatformTlsIdentityConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_create_platform_tls_identity",
+        argNames: [],
+      );
+
+  @override
+  Future<List<Uint8List>> crateApiPairingApiPairingDrainPlatformFrames({
+    required BigInt sessionId,
+    required BigInt channelId,
+    required int maximumFrames,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(channelId, serializer);
+          sse_encode_u_32(maximumFrames, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 13,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_list_prim_u_8_strict,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingDrainPlatformFramesConstMeta,
+        argValues: [sessionId, channelId, maximumFrames],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingDrainPlatformFramesConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_drain_platform_frames",
+        argNames: ["sessionId", "channelId", "maximumFrames"],
+      );
+
+  @override
   Future<List<PairingEvent>> crateApiPairingApiPairingEvents({
     required BigInt sessionId,
     required BigInt afterEventId,
@@ -434,7 +670,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 14,
             port: port_,
           );
         },
@@ -456,6 +692,42 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       );
 
   @override
+  Future<PlatformPairingChannelState>
+  crateApiPairingApiPairingPlatformChannelState({
+    required BigInt sessionId,
+    required BigInt channelId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(channelId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 15,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_platform_pairing_channel_state,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingPlatformChannelStateConstMeta,
+        argValues: [sessionId, channelId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingPlatformChannelStateConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_platform_channel_state",
+        argNames: ["sessionId", "channelId"],
+      );
+
+  @override
   Future<void> crateApiPairingApiPairingRespond({
     required BigInt sessionId,
     required BigInt requestId,
@@ -471,7 +743,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 16,
             port: port_,
           );
         },
@@ -506,7 +778,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 17,
             port: port_,
           );
         },
@@ -537,7 +809,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 18,
             port: port_,
           );
         },
@@ -555,10 +827,232 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   TaskConstMeta get kCrateApiPairingApiPairingStopConstMeta =>
       const TaskConstMeta(debugName: "pairing_stop", argNames: ["sessionId"]);
 
+  @override
+  Future<void> crateApiPairingApiPairingSubmitPlatformFrame({
+    required BigInt sessionId,
+    required BigInt channelId,
+    required List<int> frame,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(channelId, serializer);
+          sse_encode_list_prim_u_8_loose(frame, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 19,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingSubmitPlatformFrameConstMeta,
+        argValues: [sessionId, channelId, frame],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingSubmitPlatformFrameConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_submit_platform_frame",
+        argNames: ["sessionId", "channelId", "frame"],
+      );
+
+  @override
+  Future<void> crateApiPairingApiPairingTransferCancel({
+    required BigInt sessionId,
+    required String transferId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_String(transferId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 20,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingTransferCancelConstMeta,
+        argValues: [sessionId, transferId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingTransferCancelConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_cancel",
+        argNames: ["sessionId", "transferId"],
+      );
+
+  @override
+  Future<List<TransferEvent>> crateApiPairingApiPairingTransferEvents({
+    required BigInt sessionId,
+    required BigInt afterEventId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(afterEventId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 21,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_transfer_event,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingTransferEventsConstMeta,
+        argValues: [sessionId, afterEventId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingTransferEventsConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_events",
+        argNames: ["sessionId", "afterEventId"],
+      );
+
+  @override
+  Future<void> crateApiPairingApiPairingTransferRespond({
+    required BigInt sessionId,
+    required BigInt requestId,
+    required bool accepted,
+    String? stagingDirectory,
+    String? destinationDirectory,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(requestId, serializer);
+          sse_encode_bool(accepted, serializer);
+          sse_encode_opt_String(stagingDirectory, serializer);
+          sse_encode_opt_String(destinationDirectory, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 22,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingTransferRespondConstMeta,
+        argValues: [
+          sessionId,
+          requestId,
+          accepted,
+          stagingDirectory,
+          destinationDirectory,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingTransferRespondConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_respond",
+        argNames: [
+          "sessionId",
+          "requestId",
+          "accepted",
+          "stagingDirectory",
+          "destinationDirectory",
+        ],
+      );
+
+  @override
+  Future<String> crateApiPairingApiPairingTransferSendFile({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+    required String sourcePath,
+    String? advertisedName,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(authenticatedSessionId, serializer);
+          sse_encode_String(sourcePath, serializer);
+          sse_encode_opt_String(advertisedName, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 23,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingTransferSendFileConstMeta,
+        argValues: [
+          sessionId,
+          authenticatedSessionId,
+          sourcePath,
+          advertisedName,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingTransferSendFileConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_send_file",
+        argNames: [
+          "sessionId",
+          "authenticatedSessionId",
+          "sourcePath",
+          "advertisedName",
+        ],
+      );
+
   @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  AuthenticatedSessionInfo dco_decode_authenticated_session_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return AuthenticatedSessionInfo(
+      sessionId: dco_decode_u_64(arr[0]),
+      peerFingerprint: dco_decode_String(arr[1]),
+      peerPresenceId: dco_decode_opt_String(arr[2]),
+    );
   }
 
   @protected
@@ -656,6 +1150,16 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  List<AuthenticatedSessionInfo> dco_decode_list_authenticated_session_info(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_authenticated_session_info)
+        .toList();
+  }
+
+  @protected
   List<DiscoveryPeer> dco_decode_list_discovery_peer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_discovery_peer).toList();
@@ -669,6 +1173,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     return (raw as List<dynamic>)
         .map(dco_decode_discovery_provider_status)
         .toList();
+  }
+
+  @protected
+  List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_list_prim_u_8_strict).toList();
   }
 
   @protected
@@ -687,6 +1197,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  List<TransferEvent> dco_decode_list_transfer_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_transfer_event).toList();
   }
 
   @protected
@@ -724,8 +1240,8 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   PairingEvent dco_decode_pairing_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return PairingEvent(
       eventId: dco_decode_u_64(arr[0]),
       requestId: dco_decode_opt_box_autoadd_u_64(arr[1]),
@@ -734,7 +1250,8 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       peerFingerprint: dco_decode_opt_String(arr[4]),
       shortCode: dco_decode_opt_String(arr[5]),
       alreadyTrusted: dco_decode_bool(arr[6]),
-      detail: dco_decode_opt_String(arr[7]),
+      authenticatedSessionId: dco_decode_opt_box_autoadd_u_64(arr[7]),
+      detail: dco_decode_opt_String(arr[8]),
     );
   }
 
@@ -745,9 +1262,68 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  PlatformPairingChannelState dco_decode_platform_pairing_channel_state(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return PlatformPairingChannelState.values[raw as int];
+  }
+
+  @protected
+  PlatformPairingRole dco_decode_platform_pairing_role(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return PlatformPairingRole.values[raw as int];
+  }
+
+  @protected
   PlatformProviderState dco_decode_platform_provider_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return PlatformProviderState.values[raw as int];
+  }
+
+  @protected
+  PlatformTlsIdentity dco_decode_platform_tls_identity(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return PlatformTlsIdentity(
+      certificateDer: dco_decode_list_prim_u_8_strict(arr[0]),
+      privateKeyX963: dco_decode_list_prim_u_8_strict(arr[1]),
+    );
+  }
+
+  @protected
+  TransferDirection dco_decode_transfer_direction(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransferDirection.values[raw as int];
+  }
+
+  @protected
+  TransferEvent dco_decode_transfer_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    return TransferEvent(
+      eventId: dco_decode_u_64(arr[0]),
+      requestId: dco_decode_opt_box_autoadd_u_64(arr[1]),
+      authenticatedSessionId: dco_decode_u_64(arr[2]),
+      transferId: dco_decode_String(arr[3]),
+      direction: dco_decode_transfer_direction(arr[4]),
+      kind: dco_decode_transfer_event_kind(arr[5]),
+      fileName: dco_decode_String(arr[6]),
+      fileSize: dco_decode_u_64(arr[7]),
+      transferredBytes: dco_decode_u_64(arr[8]),
+      finalPath: dco_decode_opt_String(arr[9]),
+      detail: dco_decode_opt_String(arr[10]),
+    );
+  }
+
+  @protected
+  TransferEventKind dco_decode_transfer_event_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransferEventKind.values[raw as int];
   }
 
   @protected
@@ -785,6 +1361,21 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  AuthenticatedSessionInfo sse_decode_authenticated_session_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sessionId = sse_decode_u_64(deserializer);
+    var var_peerFingerprint = sse_decode_String(deserializer);
+    var var_peerPresenceId = sse_decode_opt_String(deserializer);
+    return AuthenticatedSessionInfo(
+      sessionId: var_sessionId,
+      peerFingerprint: var_peerFingerprint,
+      peerPresenceId: var_peerPresenceId,
+    );
   }
 
   @protected
@@ -907,6 +1498,20 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  List<AuthenticatedSessionInfo> sse_decode_list_authenticated_session_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <AuthenticatedSessionInfo>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_authenticated_session_info(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<DiscoveryPeer> sse_decode_list_discovery_peer(
     SseDeserializer deserializer,
   ) {
@@ -930,6 +1535,20 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     var ans_ = <DiscoveryProviderStatus>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_discovery_provider_status(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<Uint8List> sse_decode_list_list_prim_u_8_strict(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <Uint8List>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_list_prim_u_8_strict(deserializer));
     }
     return ans_;
   }
@@ -960,6 +1579,20 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<TransferEvent> sse_decode_list_transfer_event(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TransferEvent>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_transfer_event(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -1020,6 +1653,9 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     var var_peerFingerprint = sse_decode_opt_String(deserializer);
     var var_shortCode = sse_decode_opt_String(deserializer);
     var var_alreadyTrusted = sse_decode_bool(deserializer);
+    var var_authenticatedSessionId = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
     var var_detail = sse_decode_opt_String(deserializer);
     return PairingEvent(
       eventId: var_eventId,
@@ -1029,6 +1665,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       peerFingerprint: var_peerFingerprint,
       shortCode: var_shortCode,
       alreadyTrusted: var_alreadyTrusted,
+      authenticatedSessionId: var_authenticatedSessionId,
       detail: var_detail,
     );
   }
@@ -1041,12 +1678,90 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  PlatformPairingChannelState sse_decode_platform_pairing_channel_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return PlatformPairingChannelState.values[inner];
+  }
+
+  @protected
+  PlatformPairingRole sse_decode_platform_pairing_role(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return PlatformPairingRole.values[inner];
+  }
+
+  @protected
   PlatformProviderState sse_decode_platform_provider_state(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return PlatformProviderState.values[inner];
+  }
+
+  @protected
+  PlatformTlsIdentity sse_decode_platform_tls_identity(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_certificateDer = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_privateKeyX963 = sse_decode_list_prim_u_8_strict(deserializer);
+    return PlatformTlsIdentity(
+      certificateDer: var_certificateDer,
+      privateKeyX963: var_privateKeyX963,
+    );
+  }
+
+  @protected
+  TransferDirection sse_decode_transfer_direction(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransferDirection.values[inner];
+  }
+
+  @protected
+  TransferEvent sse_decode_transfer_event(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_eventId = sse_decode_u_64(deserializer);
+    var var_requestId = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_authenticatedSessionId = sse_decode_u_64(deserializer);
+    var var_transferId = sse_decode_String(deserializer);
+    var var_direction = sse_decode_transfer_direction(deserializer);
+    var var_kind = sse_decode_transfer_event_kind(deserializer);
+    var var_fileName = sse_decode_String(deserializer);
+    var var_fileSize = sse_decode_u_64(deserializer);
+    var var_transferredBytes = sse_decode_u_64(deserializer);
+    var var_finalPath = sse_decode_opt_String(deserializer);
+    var var_detail = sse_decode_opt_String(deserializer);
+    return TransferEvent(
+      eventId: var_eventId,
+      requestId: var_requestId,
+      authenticatedSessionId: var_authenticatedSessionId,
+      transferId: var_transferId,
+      direction: var_direction,
+      kind: var_kind,
+      fileName: var_fileName,
+      fileSize: var_fileSize,
+      transferredBytes: var_transferredBytes,
+      finalPath: var_finalPath,
+      detail: var_detail,
+    );
+  }
+
+  @protected
+  TransferEventKind sse_decode_transfer_event_kind(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransferEventKind.values[inner];
   }
 
   @protected
@@ -1082,6 +1797,17 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
+  }
+
+  @protected
+  void sse_encode_authenticated_session_info(
+    AuthenticatedSessionInfo self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.sessionId, serializer);
+    sse_encode_String(self.peerFingerprint, serializer);
+    sse_encode_opt_String(self.peerPresenceId, serializer);
   }
 
   @protected
@@ -1176,6 +1902,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_list_authenticated_session_info(
+    List<AuthenticatedSessionInfo> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_authenticated_session_info(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_discovery_peer(
     List<DiscoveryPeer> self,
     SseSerializer serializer,
@@ -1196,6 +1934,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_discovery_provider_status(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_list_prim_u_8_strict(
+    List<Uint8List> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_list_prim_u_8_strict(item, serializer);
     }
   }
 
@@ -1231,6 +1981,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_list_transfer_event(
+    List<TransferEvent> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_transfer_event(item, serializer);
+    }
   }
 
   @protected
@@ -1287,6 +2049,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     sse_encode_opt_String(self.peerFingerprint, serializer);
     sse_encode_opt_String(self.shortCode, serializer);
     sse_encode_bool(self.alreadyTrusted, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.authenticatedSessionId, serializer);
     sse_encode_opt_String(self.detail, serializer);
   }
 
@@ -1300,8 +2063,70 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_platform_pairing_channel_state(
+    PlatformPairingChannelState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_platform_pairing_role(
+    PlatformPairingRole self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_platform_provider_state(
     PlatformProviderState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_platform_tls_identity(
+    PlatformTlsIdentity self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_prim_u_8_strict(self.certificateDer, serializer);
+    sse_encode_list_prim_u_8_strict(self.privateKeyX963, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_direction(
+    TransferDirection self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_event(TransferEvent self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.eventId, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.requestId, serializer);
+    sse_encode_u_64(self.authenticatedSessionId, serializer);
+    sse_encode_String(self.transferId, serializer);
+    sse_encode_transfer_direction(self.direction, serializer);
+    sse_encode_transfer_event_kind(self.kind, serializer);
+    sse_encode_String(self.fileName, serializer);
+    sse_encode_u_64(self.fileSize, serializer);
+    sse_encode_u_64(self.transferredBytes, serializer);
+    sse_encode_opt_String(self.finalPath, serializer);
+    sse_encode_opt_String(self.detail, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_event_kind(
+    TransferEventKind self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
