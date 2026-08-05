@@ -17,8 +17,11 @@ multi-file offers and resumability add durable state and scheduling complexity.
 
 - A successfully paired QUIC connection becomes an authenticated session owned
   by `halo-core`. It is not exposed across FFI.
-- The session must use a local-network endpoint. BLE is rendezvous only; no
-  public or cellular fallback is attempted when Wi-Fi/Ethernet is unavailable.
+- The file-transfer session must use a local-network endpoint. BLE is never a
+  file bearer; the separately authenticated control-only onboarding bootstrap
+  in [ADR 0009](0009-authenticated-ble-bootstrap-channel.md) may only prepare a
+  later LAN. No public or cellular fallback is attempted when Wi-Fi/Ethernet is
+  unavailable.
 - Transfer control and file bytes use separate bidirectional QUIC streams on the
   authenticated connection. Pairing messages never share the data stream.
 - The first slice permits one active, single-file transfer per authenticated

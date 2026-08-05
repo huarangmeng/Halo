@@ -110,6 +110,13 @@ result, or an unsupported profile immediately skips this source without asking
 the user to weaken OS security. Device-owner, system-app, or organization-wide
 policy deployments are outside the public SDK baseline.
 
+Windows must not elevate the whole Halo UI or Rust process. If administrator
+authorization is required, a minimal signed one-shot native broker requests the
+exact current profile and returns one bounded result over authenticated local
+IPC without writing a profile export to disk. Broker cancellation, caller
+identity, profile identity, and response size are validated before Rust accepts
+the result.
+
 Enterprise EAP, Passpoint, SIM-based, certificate-based, captive-portal,
 hidden-network, and managed profiles are excluded from automatic sharing in the
 initial version. The UI may direct users to normal system network enrollment,
@@ -133,8 +140,13 @@ but Halo does not serialize those credentials.
   carry credentials. An authenticated BLE bootstrap is a separate control
   channel, not part of discovery and never part of the file data plane.
 - QR transfer necessarily exposes the credential to cameras and anyone who can
-  view the display. The UI warns the user, uses a short display lifetime, blocks
-  screenshots where the platform supports it, and requires explicit reveal.
+  view the display. A platform-native protected share view renders the QR; Dart
+  receives neither its payload nor credential-bearing pixels. The UI warns the
+  user, uses a short display lifetime, blocks screenshots where the platform
+  supports it, and requires explicit reveal.
+- The user must confirm that they are authorized to share the selected network.
+  Halo does not infer permission from possession of an administrator account or
+  Keychain item.
 
 ### Establishment and fallback
 
@@ -185,7 +197,8 @@ ceremony. OS behavior remains platform-specific and revocable.
   wrong password, stale invitation, cancellation, and restoration behavior.
 - Windows: standard-user/encrypted-only result, administrator-authorized
   plaintext result, profile ACL denial, UAC cancellation, and group-policy
-  profiles. macOS: allowed, denied, cancelled, locked, and missing Keychain
+  profiles. The least-privilege broker never writes export XML or elevates the
+  main process. macOS: allowed, denied, cancelled, locked, and missing Keychain
   items through `CWKeychainFindWiFiPassword`.
 - WPA2/WPA3 Personal and open networks where publicly supported; all excluded
   enterprise/managed/profile payloads fail closed.

@@ -75,9 +75,12 @@ The integration has an extra raw-event hop:
 native BLE callback -> Dart integration stream -> Rust submit operation
 ```
 
-This hop is acceptable because BLE carries only small rendezvous descriptors,
-not transfer data. File bytes and control-plane protocol messages must never be
-routed through a Dart platform channel.
+This hop is acceptable only for small, non-secret rendezvous descriptors, not
+transfer data. The future authenticated BLE onboarding bootstrap in
+[ADR 0009](0009-authenticated-ble-bootstrap-channel.md) bypasses Dart through a
+narrow native/Rust byte-stream adapter. File bytes, Wi-Fi credentials, TLS
+material, and control-plane protocol messages must never be routed through a
+Dart platform channel.
 
 Any duplicated Presence codec or peer aggregation logic in Kotlin, Swift, Dart,
 or a platform runner is an architecture violation.

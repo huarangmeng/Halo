@@ -196,7 +196,7 @@ separate.
 | Apple peer-to-peer Wi-Fi | No | Yes | No | Yes | Planned; authenticated native/Rust control bridge implemented, real-device gate pending |
 | Wi-Fi Direct | Yes | No general API | Yes | No general API | Planned Android/Windows provider |
 | Wi-Fi Aware / NAN | Android 8+ when hardware/runtime available | iOS/iPadOS 26 on documented supported hardware | No documented Halo-targeted app API | Not currently documented as a supported host | Planned Android and Android↔Apple provider |
-| BLE data plane | Rejected | Rejected | Rejected | Rejected | Rendezvous only |
+| BLE file data plane | Rejected | Rejected | Rejected | Rejected | Rendezvous plus authenticated onboarding bootstrap only |
 | Cellular/Internet | Prohibited | Prohibited | Not applicable to normal PCs | Not applicable to normal Macs | No fallback |
 
 The absence of a public API is a platform boundary, not a reason to emulate or
@@ -318,7 +318,9 @@ Credential-source capability is platform-specific:
 - Windows may request plaintext key material from the current personal WLAN
   profile through `WlanGetProfile` only when the calling token has the required
   plaintext-key and profile-read access; by default this means a local
-  administrator. Encrypted-only results are treated as unavailable.
+  administrator. Encrypted-only results are treated as unavailable. Halo does
+  not elevate its main process or export a profile to disk; any privileged
+  operation belongs in a signed, one-shot, least-privilege native broker.
 - macOS may call `CWKeychainFindWiFiPassword` for the current SSID, subject to
   Keychain access control and user authorization. Denial, cancellation, lock,
   or a missing item is an ordinary unavailable result.
@@ -331,6 +333,8 @@ authenticated Halo control channel. The latter may be the TLS-bound BLE
 bootstrap in ADR 0009; advertisements, rendezvous GATT, raw GATT, and all other
 unauthenticated discovery/IP channels never carry it. The credential never
 enters Dart, logs, diagnostics, clipboard, crash reports, or Halo persistence.
+A QR is rendered in a platform-native protected share view so neither its
+payload nor credential-bearing pixels enter Dart.
 
 The initial design excludes Enterprise EAP, Passpoint, SIM/certificate-based,
 managed, captive-portal, and hidden-network profiles. Membership of any Wi-Fi,
