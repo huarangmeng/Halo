@@ -18,7 +18,9 @@ use crate::{
 };
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
-use crate::platform_socket::{disable_lan_endpoint, register_bound_lan_socket};
+use crate::platform_socket::{
+    disable_lan_endpoint, register_bound_lan_socket, register_user_approved_hotspot_socket,
+};
 
 const STATUS_OK: i32 = 0;
 const STATUS_EMPTY: i32 = 1;
@@ -41,6 +43,26 @@ pub unsafe extern "C" fn halo_apple_lan_register_bound_socket(file_descriptor: i
     // registry rejects it or replaces a stale prepared endpoint.
     let owned = unsafe { OwnedFd::from_raw_fd(file_descriptor) };
     match register_bound_lan_socket(UdpSocket::from(owned)) {
+        Ok(()) => STATUS_OK,
+        Err(()) => ERROR_INTERNAL,
+    }
+}
+
+/// Takes ownership of a UDP descriptor pinned to a Wi-Fi interface that the
+/// user explicitly approved as a local hotspot path. The Apple launcher never
+/// calls this for an automatically selected expensive or constrained path.
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn halo_apple_lan_register_user_approved_hotspot_socket(
+    file_descriptor: i32,
+) -> i32 {
+    if file_descriptor < 0 {
+        return ERROR_INVALID_ARGUMENT;
+    }
+    // SAFETY: Swift transfers exclusive ownership of a newly created
+    // descriptor under the same contract as the shared-LAN entry point.
+    let owned = unsafe { OwnedFd::from_raw_fd(file_descriptor) };
+    match register_user_approved_hotspot_socket(UdpSocket::from(owned)) {
         Ok(()) => STATUS_OK,
         Err(()) => ERROR_INTERNAL,
     }

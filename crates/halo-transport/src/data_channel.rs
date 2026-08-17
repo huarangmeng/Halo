@@ -89,10 +89,26 @@ pub enum DataChannelCost {
     Unknown,
 }
 
+/// Why a local-network path is eligible for nearby transfer.
+///
+/// This is platform attestation, not peer trust. A user-approved hotspot still
+/// requires QUIC and Halo authentication before it may carry metadata or data.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LocalNetworkScope {
+    /// An already available shared LAN. Automatic use is restricted to a path
+    /// the platform reports as unmetered.
+    Shared,
+    /// A local-only hotspot selected through an explicit foreground action.
+    /// The OS may report this Wi-Fi path as metered or expensive even though
+    /// Halo packets remain on-link.
+    UserApprovedHotspot,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EstablishedPathProperties {
     pub path_class: DataChannelPathClass,
     pub cost: DataChannelCost,
+    pub local_network_scope: Option<LocalNetworkScope>,
     /// True only when the provider pinned the socket/native connection to the
     /// eligible interface or OS network object it validated.
     pub interface_bound: bool,
@@ -100,8 +116,7 @@ pub struct EstablishedPathProperties {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DataChannelPolicy {
-    pub allow_metered: bool,
-    pub allow_unknown_cost: bool,
+    pub allow_user_approved_hotspot: bool,
     pub allow_system_prompt: bool,
     pub max_system_prompt_attempts: usize,
     pub require_interface_binding: bool,
@@ -110,8 +125,7 @@ pub struct DataChannelPolicy {
 impl Default for DataChannelPolicy {
     fn default() -> Self {
         Self {
-            allow_metered: false,
-            allow_unknown_cost: false,
+            allow_user_approved_hotspot: true,
             allow_system_prompt: true,
             max_system_prompt_attempts: 1,
             require_interface_binding: true,
@@ -127,11 +141,22 @@ impl DataChannelPolicy {
         Ok(self)
     }
 
-    fn allows_cost(self, cost: DataChannelCost) -> bool {
-        match cost {
-            DataChannelCost::Unmetered => true,
-            DataChannelCost::Metered => self.allow_metered,
-            DataChannelCost::Unknown => self.allow_unknown_cost,
+    fn allows_path(
+        self,
+        path_class: DataChannelPathClass,
+        cost: DataChannelCost,
+        local_network_scope: Option<LocalNetworkScope>,
+        requires_user_action: bool,
+    ) -> bool {
+        match (path_class, local_network_scope) {
+            (DataChannelPathClass::LocalNetwork, Some(LocalNetworkScope::Shared)) => {
+                cost == DataChannelCost::Unmetered && !requires_user_action
+            }
+            (DataChannelPathClass::LocalNetwork, Some(LocalNetworkScope::UserApprovedHotspot)) => {
+                self.allow_user_approved_hotspot && requires_user_action
+            }
+            (DataChannelPathClass::PeerToPeer, None) => cost == DataChannelCost::Unmetered,
+            _ => false,
         }
     }
 }
@@ -140,6 +165,7 @@ impl DataChannelPolicy {
 pub struct DataChannelCandidateProperties {
     pub path_class: DataChannelPathClass,
     pub cost: DataChannelCost,
+    pub local_network_scope: Option<LocalNetworkScope>,
     pub already_available: bool,
     pub requires_user_action: bool,
     pub estimated_round_trip_time: Option<Duration>,
@@ -154,6 +180,7 @@ pub struct DataChannelCandidate {
     kind: DataChannelKind,
     path_class: DataChannelPathClass,
     cost: DataChannelCost,
+    local_network_scope: Option<LocalNetworkScope>,
     already_available: bool,
     requires_user_action: bool,
     estimated_round_trip_time: Option<Duration>,
@@ -169,14 +196,17 @@ impl DataChannelCandidate {
         let DataChannelCandidateProperties {
             path_class,
             cost,
+            local_network_scope,
             already_available,
             requires_user_action,
             estimated_round_trip_time,
         } = properties;
-        if !matches!(
-            path_class,
-            DataChannelPathClass::LocalNetwork | DataChannelPathClass::PeerToPeer
-        ) {
+        let scope_matches_path = matches!(
+            (path_class, local_network_scope),
+            (DataChannelPathClass::LocalNetwork, Some(_))
+                | (DataChannelPathClass::PeerToPeer, None)
+        );
+        if !scope_matches_path {
             return Err(DataChannelError::ProhibitedPath);
         }
         Ok(Self {
@@ -185,6 +215,7 @@ impl DataChannelCandidate {
             kind,
             path_class,
             cost,
+            local_network_scope,
             already_available,
             requires_user_action,
             estimated_round_trip_time,
@@ -214,6 +245,11 @@ impl DataChannelCandidate {
     #[must_use]
     pub const fn cost(&self) -> DataChannelCost {
         self.cost
+    }
+
+    #[must_use]
+    pub const fn local_network_scope(&self) -> Option<LocalNetworkScope> {
+        self.local_network_scope
     }
 
     #[must_use]
@@ -401,12 +437,12 @@ impl DataChannelBroker {
                     for candidate in provider_candidates.into_iter().take(MAX_CANDIDATES) {
                         if candidate.peer == peer
                             && candidate.kind == provider.capability().kind
-                            && matches!(
+                            && self.policy.allows_path(
                                 candidate.path_class,
-                                DataChannelPathClass::LocalNetwork
-                                    | DataChannelPathClass::PeerToPeer
+                                candidate.cost,
+                                candidate.local_network_scope,
+                                candidate.requires_user_action,
                             )
-                            && self.policy.allows_cost(candidate.cost)
                             && (!candidate.requires_user_action
                                 || (self.policy.allow_system_prompt
                                     && self.policy.max_system_prompt_attempts > 0))
@@ -560,11 +596,13 @@ async fn establish_and_authenticate(
         || channel.peer() != candidate.peer
         || properties.path_class != candidate.path_class
         || properties.cost != candidate.cost
-        || !matches!(
+        || properties.local_network_scope != candidate.local_network_scope
+        || !policy.allows_path(
             properties.path_class,
-            DataChannelPathClass::LocalNetwork | DataChannelPathClass::PeerToPeer
+            properties.cost,
+            properties.local_network_scope,
+            candidate.requires_user_action,
         )
-        || !policy.allows_cost(properties.cost)
         || (policy.require_interface_binding && !properties.interface_bound)
     {
         channel.close();
@@ -582,12 +620,14 @@ async fn establish_and_authenticate(
 }
 
 fn candidate_score(candidate: &DataChannelCandidate) -> i32 {
-    let mut score = match candidate.path_class {
-        DataChannelPathClass::LocalNetwork => 300,
-        DataChannelPathClass::PeerToPeer => 250,
-        DataChannelPathClass::Cellular
-        | DataChannelPathClass::Internet
-        | DataChannelPathClass::Unknown => i32::MIN,
+    let mut score = match (candidate.path_class, candidate.local_network_scope) {
+        (DataChannelPathClass::LocalNetwork, Some(LocalNetworkScope::Shared)) => 3_000,
+        (DataChannelPathClass::LocalNetwork, Some(LocalNetworkScope::UserApprovedHotspot)) => 2_000,
+        (DataChannelPathClass::PeerToPeer, None) => 1_000,
+        (DataChannelPathClass::Cellular, _)
+        | (DataChannelPathClass::Internet, _)
+        | (DataChannelPathClass::Unknown, _) => i32::MIN,
+        _ => i32::MIN,
     };
     if candidate.already_available {
         score += 200;
@@ -724,6 +764,7 @@ mod tests {
                         properties: EstablishedPathProperties {
                             path_class: candidate.path_class,
                             cost: candidate.cost,
+                            local_network_scope: candidate.local_network_scope,
                             interface_bound: self.interface_bound,
                         },
                         closed: Arc::clone(&self.channel_closed),
@@ -747,12 +788,37 @@ mod tests {
             DataChannelCandidateProperties {
                 path_class: path,
                 cost: DataChannelCost::Unmetered,
+                local_network_scope: match path {
+                    DataChannelPathClass::LocalNetwork => Some(LocalNetworkScope::Shared),
+                    _ => None,
+                },
                 already_available,
                 requires_user_action: false,
                 estimated_round_trip_time: Some(Duration::from_millis(10)),
             },
         )
         .unwrap_or_else(|error| panic!("candidate: {error}"))
+    }
+
+    fn hotspot_candidate(
+        id: u8,
+        peer: DataChannelPeer,
+        cost: DataChannelCost,
+    ) -> DataChannelCandidate {
+        DataChannelCandidate::new(
+            DataChannelCandidateId::from_bytes([id; 16]),
+            peer,
+            DataChannelKind::Lan,
+            DataChannelCandidateProperties {
+                path_class: DataChannelPathClass::LocalNetwork,
+                cost,
+                local_network_scope: Some(LocalNetworkScope::UserApprovedHotspot),
+                already_available: false,
+                requires_user_action: true,
+                estimated_round_trip_time: None,
+            },
+        )
+        .unwrap_or_else(|error| panic!("hotspot candidate: {error}"))
     }
 
     fn provider(
@@ -841,6 +907,7 @@ mod tests {
                     DataChannelCandidateProperties {
                         path_class: path,
                         cost: DataChannelCost::Unmetered,
+                        local_network_scope: None,
                         already_available: true,
                         requires_user_action: false,
                         estimated_round_trip_time: None,
@@ -849,6 +916,39 @@ mod tests {
                 Err(DataChannelError::ProhibitedPath)
             );
         }
+
+        assert!(matches!(
+            DataChannelCandidate::new(
+                DataChannelCandidateId::from_bytes([3; 16]),
+                peer,
+                DataChannelKind::Lan,
+                DataChannelCandidateProperties {
+                    path_class: DataChannelPathClass::LocalNetwork,
+                    cost: DataChannelCost::Unmetered,
+                    local_network_scope: None,
+                    already_available: true,
+                    requires_user_action: false,
+                    estimated_round_trip_time: None,
+                },
+            ),
+            Err(DataChannelError::ProhibitedPath)
+        ));
+        assert!(matches!(
+            DataChannelCandidate::new(
+                DataChannelCandidateId::from_bytes([4; 16]),
+                peer,
+                DataChannelKind::WifiAware,
+                DataChannelCandidateProperties {
+                    path_class: DataChannelPathClass::PeerToPeer,
+                    cost: DataChannelCost::Unmetered,
+                    local_network_scope: Some(LocalNetworkScope::Shared),
+                    already_available: true,
+                    requires_user_action: false,
+                    estimated_round_trip_time: None,
+                },
+            ),
+            Err(DataChannelError::ProhibitedPath)
+        ));
     }
 
     #[tokio::test]
@@ -1025,6 +1125,7 @@ mod tests {
                     DataChannelCandidateProperties {
                         path_class: DataChannelPathClass::PeerToPeer,
                         cost: DataChannelCost::Unmetered,
+                        local_network_scope: None,
                         already_available: false,
                         requires_user_action: true,
                         estimated_round_trip_time: Some(Duration::from_millis(10)),
@@ -1068,6 +1169,7 @@ mod tests {
             DataChannelCandidateProperties {
                 path_class: DataChannelPathClass::LocalNetwork,
                 cost: DataChannelCost::Metered,
+                local_network_scope: Some(LocalNetworkScope::Shared),
                 already_available: true,
                 requires_user_action: false,
                 estimated_round_trip_time: None,
@@ -1125,6 +1227,105 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn user_approved_local_hotspot_accepts_metered_cost_only_after_prompt() {
+        let peer = DataChannelPeer::from_bytes([30; 16]);
+        let hotspot = provider(
+            DataChannelCapability {
+                kind: DataChannelKind::Lan,
+                state: DataChannelCapabilityState::Ready,
+            },
+            vec![hotspot_candidate(31, peer, DataChannelCost::Metered)],
+            Duration::from_millis(1),
+            true,
+        );
+        let providers: Vec<Arc<dyn DataChannelProvider>> = vec![hotspot.clone()];
+        let broker = DataChannelBroker::new(providers, Duration::from_secs(1))
+            .unwrap_or_else(|error| panic!("broker: {error}"));
+
+        let result = broker
+            .establish(peer, CancellationToken::new())
+            .await
+            .unwrap_or_else(|error| panic!("hotspot establish: {error}"));
+
+        assert_eq!(
+            result.candidate.local_network_scope(),
+            Some(LocalNetworkScope::UserApprovedHotspot)
+        );
+        assert_eq!(result.candidate.cost(), DataChannelCost::Metered);
+        assert_eq!(
+            *hotspot
+                .attempts
+                .lock()
+                .unwrap_or_else(|_| panic!("hotspot attempts")),
+            1
+        );
+
+        let disabled = DataChannelBroker::new(
+            vec![hotspot as Arc<dyn DataChannelProvider>],
+            Duration::from_secs(1),
+        )
+        .unwrap_or_else(|error| panic!("disabled broker: {error}"))
+        .with_policy(DataChannelPolicy {
+            allow_user_approved_hotspot: false,
+            ..DataChannelPolicy::default()
+        })
+        .unwrap_or_else(|error| panic!("disabled policy: {error}"));
+        assert!(matches!(
+            disabled.establish(peer, CancellationToken::new()).await,
+            Err(DataChannelError::NoCandidates)
+        ));
+    }
+
+    #[tokio::test]
+    async fn shared_lan_wins_before_user_approved_hotspot() {
+        let peer = DataChannelPeer::from_bytes([32; 16]);
+        let shared = provider(
+            DataChannelCapability {
+                kind: DataChannelKind::Lan,
+                state: DataChannelCapabilityState::Ready,
+            },
+            vec![candidate(
+                33,
+                peer,
+                DataChannelKind::Lan,
+                DataChannelPathClass::LocalNetwork,
+                true,
+            )],
+            Duration::from_millis(1),
+            true,
+        );
+        let hotspot = provider(
+            DataChannelCapability {
+                kind: DataChannelKind::Lan,
+                state: DataChannelCapabilityState::Ready,
+            },
+            vec![hotspot_candidate(34, peer, DataChannelCost::Unknown)],
+            Duration::from_millis(1),
+            true,
+        );
+        let providers: Vec<Arc<dyn DataChannelProvider>> = vec![hotspot.clone(), shared];
+        let broker = DataChannelBroker::new(providers, Duration::from_secs(1))
+            .unwrap_or_else(|error| panic!("broker: {error}"));
+
+        let result = broker
+            .establish(peer, CancellationToken::new())
+            .await
+            .unwrap_or_else(|error| panic!("shared establish: {error}"));
+
+        assert_eq!(
+            result.candidate.local_network_scope(),
+            Some(LocalNetworkScope::Shared)
+        );
+        assert_eq!(
+            *hotspot
+                .attempts
+                .lock()
+                .unwrap_or_else(|_| panic!("hotspot attempts")),
+            0
+        );
+    }
+
+    #[tokio::test]
     async fn system_prompt_candidates_are_bounded_and_deferred() {
         let peer = DataChannelPeer::from_bytes([17; 16]);
         let automatic = provider(
@@ -1149,6 +1350,7 @@ mod tests {
             DataChannelCandidateProperties {
                 path_class: DataChannelPathClass::PeerToPeer,
                 cost: DataChannelCost::Unmetered,
+                local_network_scope: None,
                 already_available: false,
                 requires_user_action: true,
                 estimated_round_trip_time: Some(Duration::from_millis(10)),

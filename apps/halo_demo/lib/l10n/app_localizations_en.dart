@@ -62,6 +62,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get stop => 'Stop';
 
   @override
+  String get localHotspotJoin => 'Join local hotspot';
+
+  @override
+  String get localHotspotUseCurrentWifi => 'Use current Wi-Fi as local hotspot';
+
+  @override
+  String get localHotspotLeave => 'Leave hotspot';
+
+  @override
+  String get localHotspotStopUsingCurrentWifi => 'Stop hotspot use';
+
+  @override
   String nearbyDevices(int count) {
     return 'Nearby devices ($count)';
   }
@@ -213,6 +225,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get capabilityLocalNetwork => 'Local network';
 
   @override
+  String get capabilityLocalHotspot => 'Local-only hotspot';
+
+  @override
   String get capabilityApplePeerToPeer => 'Apple peer-to-peer Wi-Fi';
 
   @override
@@ -305,6 +320,50 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get capabilityLocalNetworkRestartRequired =>
       'The local network changed; restart discovery to bind a new QUIC socket.';
+
+  @override
+  String get capabilityLocalHotspotNotJoined =>
+      'No user-approved local hotspot is joined.';
+
+  @override
+  String get capabilityLocalHotspotJoining =>
+      'Waiting for Android to join the selected local-only hotspot.';
+
+  @override
+  String get capabilityLocalHotspotJoined =>
+      'A user-approved local-only hotspot is pinned for the next discovery session.';
+
+  @override
+  String get capabilityLocalHotspotPermissionDenied =>
+      'Nearby Wi-Fi permission is required to join a local hotspot.';
+
+  @override
+  String get capabilityLocalHotspotStopDiscoveryFirst =>
+      'Stop discovery before changing the local hotspot.';
+
+  @override
+  String get capabilityLocalHotspotLost =>
+      'The local hotspot was lost; the old QUIC path cannot migrate.';
+
+  @override
+  String get capabilityLocalHotspotInvalidCredentials =>
+      'The hotspot name or WPA2 passphrase is invalid.';
+
+  @override
+  String get capabilityLocalHotspotUnavailable =>
+      'Android could not join the requested local-only hotspot.';
+
+  @override
+  String get capabilityLocalHotspotFailed =>
+      'Local-hotspot setup failed safely.';
+
+  @override
+  String get capabilityLocalHotspotBindingFailed =>
+      'The hotspot joined, but its socket could not be pinned safely.';
+
+  @override
+  String get capabilityLocalHotspotCancelled =>
+      'Local-hotspot setup was cancelled.';
 
   @override
   String get capabilityEthernetConnected =>

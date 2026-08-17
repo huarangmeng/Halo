@@ -33,6 +33,8 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
   private var latestNetworkPath: NWPath?
   private var preparedLanInterfaceIndex: UInt32?
   private var lanPreparationAttempted = false
+  private var lanScope: HaloAppleLocalNetworkScope = .shared
+  private var localHotspotDetail = "local_hotspot_not_joined"
   private var lastBleStateName: String?
   private var wifiState = "temporarily_unavailable"
   private var wifiDetail = "wifi_not_connected"
@@ -109,6 +111,37 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       }
     case "capabilities":
       result(capabilityPayload())
+    case "joinLocalHotspot":
+      #if os(macOS)
+      guard provider == nil else {
+        localHotspotDetail = "local_hotspot_stop_discovery_first"
+        result(["ready": false, "detail": localHotspotDetail])
+        return
+      }
+      lanScope = .userApprovedHotspot
+      localHotspotDetail = "local_hotspot_joining"
+      prepareLanSocket()
+      result([
+        "ready": localNetworkState == "ready",
+        "detail": localHotspotDetail,
+      ])
+      #else
+      result(FlutterMethodNotImplemented)
+      #endif
+    case "leaveLocalHotspot":
+      #if os(macOS)
+      guard provider == nil else {
+        localHotspotDetail = "local_hotspot_stop_discovery_first"
+        result(["ready": false, "detail": localHotspotDetail])
+        return
+      }
+      lanScope = .shared
+      localHotspotDetail = "local_hotspot_not_joined"
+      prepareLanSocket()
+      result(["ready": true, "detail": localHotspotDetail])
+      #else
+      result(FlutterMethodNotImplemented)
+      #endif
     case "start":
       guard let presence = presenceArgument(call) else {
         result(FlutterError(
@@ -789,7 +822,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     let background = capability("background", "unsupported", "foreground_only")
     #endif
 
-    return [
+    var capabilities = [
       bluetooth,
       capability("wifi", wifiState, wifiDetail),
       capability("local_network", localNetworkState, localNetworkDetail),
@@ -802,6 +835,23 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       wifiAwareCapability(),
       background,
     ]
+    #if os(macOS)
+    capabilities.insert(localHotspotCapability(), at: 3)
+    #endif
+    return capabilities
+  }
+
+  private func localHotspotCapability() -> [String: String] {
+    let state: String
+    switch localHotspotDetail {
+    case "local_hotspot_joined": state = "ready"
+    case "local_hotspot_joining": state = "starting"
+    case "local_hotspot_not_joined", "local_hotspot_cancelled": state = "stopped"
+    case "local_hotspot_unavailable", "local_hotspot_lost",
+         "local_hotspot_stop_discovery_first": state = "temporarily_unavailable"
+    default: state = "failed"
+    }
+    return capability("local_hotspot", state, localHotspotDetail)
   }
 
   private func wifiAwareCapability() -> [String: String] {
@@ -817,6 +867,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
 
   private func updateNetworkState(_ path: NWPath) {
     latestNetworkPath = path
+    defer { synchronizeLocalHotspotState() }
     guard path.status == .satisfied else {
       wifiState = "temporarily_unavailable"
       wifiDetail = "wifi_not_connected"
@@ -838,7 +889,10 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       return
     }
 
-    guard let interface = HaloAppleBoundLanSocket.eligibleInterface(on: path),
+    guard let interface = HaloAppleBoundLanSocket.eligibleInterface(
+      on: path,
+      scope: lanScope
+    ),
           let interfaceIndex = UInt32(exactly: interface.index)
     else {
       localNetworkState = "temporarily_unavailable"
@@ -870,7 +924,10 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     lanPreparationAttempted = true
     preparedLanInterfaceIndex = nil
     let path = latestNetworkPath ?? pathMonitor.currentPath
-    guard let interface = HaloAppleBoundLanSocket.eligibleInterface(on: path),
+    guard let interface = HaloAppleBoundLanSocket.eligibleInterface(
+      on: path,
+      scope: lanScope
+    ),
           let interfaceIndex = UInt32(exactly: interface.index)
     else {
       if halo_apple_lan_disable() != haloAppleNativeStatusOK {
@@ -879,24 +936,51 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       } else {
         updateNetworkState(path)
       }
+      synchronizeLocalHotspotState()
       return
     }
     do {
       let descriptor = try HaloAppleBoundLanSocket.makeIPv4Socket(on: interface)
       // Rust consumes every valid descriptor, including when registration
       // returns an internal error. Swift must never close it after this call.
-      guard halo_apple_lan_register_bound_socket(descriptor) == haloAppleNativeStatusOK else {
+      let registrationStatus = switch lanScope {
+      case .shared:
+        halo_apple_lan_register_bound_socket(descriptor)
+      case .userApprovedHotspot:
+        halo_apple_lan_register_user_approved_hotspot_socket(descriptor)
+      }
+      guard registrationStatus == haloAppleNativeStatusOK else {
         localNetworkState = "failed"
         localNetworkDetail = "local_network_binding_failed"
+        synchronizeLocalHotspotState()
         return
       }
       preparedLanInterfaceIndex = interfaceIndex
       localNetworkState = "ready"
       localNetworkDetail = "local_network_socket_bound"
+      synchronizeLocalHotspotState()
     } catch {
       _ = halo_apple_lan_disable()
       localNetworkState = "failed"
       localNetworkDetail = "local_network_binding_failed"
+      synchronizeLocalHotspotState()
+    }
+  }
+
+  private func synchronizeLocalHotspotState() {
+    guard lanScope == .userApprovedHotspot else {
+      localHotspotDetail = "local_hotspot_not_joined"
+      return
+    }
+    switch localNetworkState {
+    case "ready":
+      localHotspotDetail = "local_hotspot_joined"
+    case "failed":
+      localHotspotDetail = "local_hotspot_binding_failed"
+    default:
+      localHotspotDetail = localHotspotDetail == "local_hotspot_joined"
+        ? "local_hotspot_lost"
+        : "local_hotspot_unavailable"
     }
   }
 

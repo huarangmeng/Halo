@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="halo_hotspot_join_title">加入 Halo 本地热点</string>
+    <string name="halo_hotspot_join_message">请输入热点创建端显示的凭据。凭据只保留在原生内存中，不经过 Flutter。</string>
+    <string name="halo_hotspot_ssid_hint">Wi-Fi 名称（SSID）</string>
+    <string name="halo_hotspot_passphrase_hint">WPA2 密码</string>
+    <string name="halo_hotspot_join_action">加入</string>
+</resources>

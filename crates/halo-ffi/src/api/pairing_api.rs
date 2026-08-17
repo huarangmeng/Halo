@@ -129,8 +129,11 @@ pub fn pairing_start(
         .map_err(core_error)?;
     let mut config = PairingConfig::new(PathBuf::from(trust_store_directory));
     match take_lan_endpoint().map_err(|()| HaloApiError::InternalState)? {
-        Some(RegisteredLanEndpoint::Bound(socket)) => {
+        Some(RegisteredLanEndpoint::SharedUnmetered(socket)) => {
             config = config.with_bound_local_unmetered_socket(socket);
+        }
+        Some(RegisteredLanEndpoint::UserApprovedHotspot(socket)) => {
+            config = config.with_bound_user_approved_hotspot_socket(socket);
         }
         Some(RegisteredLanEndpoint::Disabled) => {
             config = config.with_bind_address("127.0.0.1:0".parse().map_err(core_error)?);

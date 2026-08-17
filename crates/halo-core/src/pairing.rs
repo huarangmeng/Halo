@@ -15,9 +15,10 @@ use halo_discovery::is_local_network_ip;
 use halo_protocol::{Capabilities, ProtocolRange};
 use halo_transport::{
     ConnectErrorKind, ConnectionCandidate, ConnectionRacer, ControlIo, DataChannelCost,
-    DataChannelPathClass, EstablishedPathProperties, PairingFlowError, PairingPrompt,
-    PairingUserInteraction, PlatformControlDriver, PlatformControlError, PlatformControlIo,
-    QuicConnection, QuicEndpoint, pair_as_initiator, pair_as_responder, platform_control_channel,
+    DataChannelPathClass, EstablishedPathProperties, LocalNetworkScope, PairingFlowError,
+    PairingPrompt, PairingUserInteraction, PlatformControlDriver, PlatformControlError,
+    PlatformControlIo, QuicConnection, QuicEndpoint, pair_as_initiator, pair_as_responder,
+    platform_control_channel,
 };
 use thiserror::Error;
 use tokio::{
@@ -135,6 +136,23 @@ impl PairingConfig {
             EstablishedPathProperties {
                 path_class: DataChannelPathClass::LocalNetwork,
                 cost: DataChannelCost::Unmetered,
+                local_network_scope: Some(LocalNetworkScope::Shared),
+                interface_bound: true,
+            },
+        )
+    }
+
+    /// Uses a UDP socket pinned to a foreground, user-approved local-only
+    /// hotspot. The platform may report this Wi-Fi path as metered or unknown,
+    /// but it must never supply a cellular, Internet, or VPN route here.
+    #[must_use]
+    pub fn with_bound_user_approved_hotspot_socket(self, socket: UdpSocket) -> Self {
+        self.with_bound_socket(
+            socket,
+            EstablishedPathProperties {
+                path_class: DataChannelPathClass::LocalNetwork,
+                cost: DataChannelCost::Metered,
+                local_network_scope: Some(LocalNetworkScope::UserApprovedHotspot),
                 interface_bound: true,
             },
         )
@@ -261,13 +279,27 @@ impl PairingService {
         };
         let endpoint = Arc::new(match bound_socket {
             Some((socket, properties)) => {
-                if !properties.interface_bound
-                    || properties.cost != DataChannelCost::Unmetered
-                    || !matches!(
+                let eligible = matches!(
+                    (
                         properties.path_class,
-                        DataChannelPathClass::LocalNetwork | DataChannelPathClass::PeerToPeer
+                        properties.local_network_scope,
+                        properties.cost,
+                    ),
+                    (
+                        DataChannelPathClass::LocalNetwork,
+                        Some(LocalNetworkScope::Shared),
+                        DataChannelCost::Unmetered,
+                    ) | (
+                        DataChannelPathClass::LocalNetwork,
+                        Some(LocalNetworkScope::UserApprovedHotspot),
+                        _,
+                    ) | (
+                        DataChannelPathClass::PeerToPeer,
+                        None,
+                        DataChannelCost::Unmetered
                     )
-                {
+                );
+                if !properties.interface_bound || !eligible {
                     return Err(PairingError::IneligiblePath);
                 }
                 QuicEndpoint::server_with_socket(socket)?
@@ -1625,6 +1657,21 @@ mod tests {
         assert_eq!(startup.listen_port, expected_port);
         startup.service.shutdown().await;
 
+        let hotspot_socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+            .unwrap_or_else(|error| panic!("hotspot socket: {error}"));
+        let hotspot_port = hotspot_socket
+            .local_addr()
+            .unwrap_or_else(|error| panic!("hotspot address: {error}"))
+            .port();
+        let hotspot = PairingService::start(
+            PairingConfig::new(directory.join("hotspot"))
+                .with_bound_user_approved_hotspot_socket(hotspot_socket),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("hotspot service start: {error}"));
+        assert_eq!(hotspot.listen_port, hotspot_port);
+        hotspot.service.shutdown().await;
+
         let unbound_socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
             .unwrap_or_else(|error| panic!("unbound policy socket: {error}"));
         let rejected = PairingService::start(
@@ -1633,6 +1680,7 @@ mod tests {
                 EstablishedPathProperties {
                     path_class: DataChannelPathClass::LocalNetwork,
                     cost: DataChannelCost::Unmetered,
+                    local_network_scope: Some(LocalNetworkScope::Shared),
                     interface_bound: false,
                 },
             ),

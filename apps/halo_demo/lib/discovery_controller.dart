@@ -89,6 +89,7 @@ class DiscoveryController extends ChangeNotifier {
   Timer? _snapshotTimer;
   Future<void>? _startOperation;
   Future<void>? _stopOperation;
+  Future<void>? _hotspotOperation;
   bool _stopRequested = false;
   bool _refreshing = false;
   final Set<BigInt> _respondedPairingRequests = <BigInt>{};
@@ -100,8 +101,23 @@ class DiscoveryController extends ChangeNotifier {
   bool get canStart =>
       _startOperation == null &&
       _stopOperation == null &&
+      _hotspotOperation == null &&
       (state == DiscoveryRunState.stopped || state == DiscoveryRunState.failed);
   bool get canStop => _sessionId != null;
+  bool get canJoinLocalHotspot =>
+      (platform == 'android' || platform == 'macos') &&
+      state == DiscoveryRunState.stopped &&
+      _hotspotOperation == null &&
+      !hasJoinedLocalHotspot;
+  bool get canLeaveLocalHotspot =>
+      (platform == 'android' || platform == 'macos') &&
+      state == DiscoveryRunState.stopped &&
+      _hotspotOperation == null &&
+      hasJoinedLocalHotspot;
+  bool get hasJoinedLocalHotspot => platformCapabilities.any(
+    (capability) =>
+        capability.name == 'local_hotspot' && capability.state == 'ready',
+  );
   bool get canPair => _pairingSessionId != null;
   bool get hasEligibleLocalNetworkPath => platformCapabilities.any(
     (capability) =>
@@ -124,6 +140,49 @@ class DiscoveryController extends ChangeNotifier {
     _startOperation = operation;
     return operation.whenComplete(() {
       if (identical(_startOperation, operation)) _startOperation = null;
+    });
+  }
+
+  Future<void> joinLocalHotspot() => _runHotspotOperation('joinLocalHotspot');
+
+  Future<void> leaveLocalHotspot() => _runHotspotOperation('leaveLocalHotspot');
+
+  Future<void> _runHotspotOperation(String method) {
+    if (_hotspotOperation != null ||
+        (platform != 'android' && platform != 'macos')) {
+      return Future<void>.value();
+    }
+    final operation = () async {
+      try {
+        final response = await _methods.invokeMethod<Object?>(method);
+        final detail = response is Map<Object?, Object?>
+            ? response['detail'] as String?
+            : null;
+        if (detail != null) {
+          _setNotice(
+            DiscoveryNotice.diagnostic,
+            operation: 'local_hotspot',
+            detail: detail,
+          );
+        }
+        await refreshPlatformCapabilities(notify: false);
+      } on MissingPluginException {
+        // Unsupported launchers and widget tests do not expose hotspot setup.
+      } catch (error) {
+        _setNotice(
+          DiscoveryNotice.diagnostic,
+          operation: 'local_hotspot',
+          detail: _safeError(error),
+        );
+      } finally {
+        notifyListeners();
+      }
+    }();
+    _hotspotOperation = operation;
+    notifyListeners();
+    return operation.whenComplete(() {
+      if (identical(_hotspotOperation, operation)) _hotspotOperation = null;
+      notifyListeners();
     });
   }
 

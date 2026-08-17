@@ -42,3 +42,31 @@ func zeroInterfaceIndexIsRejectedWithoutCreatingASocket() {
         try HaloAppleBoundLanSocket.makeIPv4Socket(interfaceIndex: 0)
     }
 }
+
+@Test
+func sharedLanRejectsExpensiveOrConstrainedPaths() {
+    #expect(HaloAppleBoundLanSocket.allows(
+        isExpensive: false,
+        isConstrained: false,
+        scope: .shared
+    ))
+    #expect(!HaloAppleBoundLanSocket.allows(
+        isExpensive: true,
+        isConstrained: false,
+        scope: .shared
+    ))
+    #expect(!HaloAppleBoundLanSocket.allows(
+        isExpensive: false,
+        isConstrained: true,
+        scope: .shared
+    ))
+}
+
+@Test
+func explicitHotspotApprovalAllowsAppleExpensiveClassification() {
+    #expect(HaloAppleBoundLanSocket.allows(
+        isExpensive: true,
+        isConstrained: true,
+        scope: .userApprovedHotspot
+    ))
+}

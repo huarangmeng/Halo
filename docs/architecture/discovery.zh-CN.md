@@ -1,9 +1,10 @@
 # Halo 设备发现与链路探测设计
 
-- 状态：Android/iOS/macOS 前台发现实验实现，持续真机验证
+- 状态：Android/macOS 为当前产品目标；iOS 与 Windows 产品能力后补
 - 版本：Draft 1
 - 日期：2026-07-28
-- 适用平台：Android、iOS、Windows、macOS
+- 当前验收组合：Android ↔ macOS、Android ↔ Android；macOS ↔ macOS 回归
+- 后续协议目标：iOS/iPadOS、Windows
 
 本文负责会合、Observation 和候选证据。Apple 点对点 Wi-Fi、Wi-Fi Direct、
 Wi-Fi Aware 与局域网如何建立实际数据路径，以
@@ -612,25 +613,32 @@ stopped
 
 ## 18. 实现顺序
 
-实现仍按可验证的垂直切片推进，但所有基础 Provider 都属于首批范围：
+实现仍按可验证的垂直切片推进。当前只交付 Android 与 macOS，公共协议继续保持可移植：
 
 1. 固化统一 Observation、Provider、Presence 包、聚合和排序契约。
 2. 完成 IPv4/IPv6 multicast、directed broadcast、known-peer direct 与 mDNS。
 3. 定义 Native Provider FFI 和 BLE GATT 字节协议。
-4. 建立唯一 Flutter Demo 和 Rust FFI，再依次完成 macOS、Windows、Android、iOS
-   的纯系统 BLE 驱动；每完成一端立即通过同一 Flutter + Rust 会话做双机测试。
+4. 建立唯一 Flutter Demo 和 Rust FFI，完成 macOS 与 Android 的纯系统 BLE 驱动，
+   并通过同一 Flutter + Rust 会话覆盖 Android ↔ macOS、Android ↔ Android；macOS ↔
+   macOS 作为回归路径。
 5. 接入真实 QUIC/TLS 握手竞速与连接结果反馈。
 6. 完成网络切换、权限变化、睡眠唤醒和资源释放。
-7. 接入 Apple 点对点 Wi-Fi，并完成 Apple 原生 QUIC 与 Quinn 的 exporter/线协议互通。
-8. 接入 Android/Windows Wi-Fi Direct，完成 Group Owner 双向和跨厂商矩阵。
-9. 接入 Android/Apple Wi-Fi Aware，完成发布/订阅角色反转和跨栈矩阵。
-10. 完成全矩阵、模糊测试、压力测试、功耗基线和发布报告。
+7. 完成共同 Wi-Fi 优先、用户准备热点次之的本地路径策略；热点可能被系统标为
+   计费/昂贵，但只允许用户明确选择、精确绑定且对端本地可达的候选。首个切片支持
+   Android 与 macOS 加入端；端点自身创建热点需要单独证明宿主接口所有权。
+8. 完成 Android ↔ macOS、Android ↔ Android 真机矩阵与 macOS ↔ macOS 回归、模糊
+   测试、压力测试、功耗基线和发布报告。
+9. Android/macOS 里程碑完成后，再恢复 iOS/iPadOS、Windows、Apple 点对点 Wi-Fi、
+   Wi-Fi Direct 与 Wi-Fi Aware 的产品接线和真机矩阵。
+
+蜂窝网络、公网会合、NAT 穿透和云端中继不属于后补项，而是明确不支持的边界；只有
+蜂窝网络时返回“无可用传输路径”。平台与通道顺序见 ADR 0010。
 
 不允许先做一个永远返回成功的 BLE stub，再把 README 状态改成 supported。
 
 ## 19. 当前状态
 
-截至 2026-07-28：
+截至 2026-08-05：
 
 - Rust 多 Provider 管理器、Observation 聚合、TTL、排序、连接结果反馈和安全隔离已实现；
 - mDNS、IPv4 multicast + directed broadcast、IPv6 multicast 和 known-peer direct
@@ -643,14 +651,19 @@ stopped
   已接入同一 Flutter UI；iOS arm64 iPhoneOS 构建已通过，但尚未进行 iOS 真机互测；
 - Android BLE 系统驱动已经接入同一 Flutter UI；Kotlin 只调用系统 API 并搬运 Rust
   Presence 字节，不包含 Presence codec 或发现业务状态机；
+- Rust 已把共享 LAN 与用户授权热点建模为不同作用域，前者自动路径只接受非计费网络，
+  后者必须经过显式用户操作且优先级更低；Android 加入端使用
+  `WifiNetworkSpecifier` 和精确 `Network.bindSocket`，macOS 使用当前 Wi-Fi 授权与
+  `IP_BOUND_IF`。两端加入外部热点的代码接线和主机构建已通过，仍待统一真机验证；
 - `halo-ffi` 已接入 Rust DiscoveryManager，BLE 原始字节必须经过 Rust codec 和聚合器，
   相关跨边界自动测试已经通过；
 - Android ↔ macOS 已在真机上完成双向发现验证；UI 可显示完整 Presence ID、设备类型、
   聚合来源和 Rust 报告的各 Provider 运行状态；
 - Windows BLE 系统驱动尚未实现。
 
-因此当前状态是“Android/macOS 真机发现已验证 + iOS arm64 构建已验证 + Windows
-待实现”。这仍不能称为三端或四端真机支持，也不代表发现到的设备已经通过身份认证。
+因此当前状态是“Android/macOS 真机发现已验证 + Android ↔ macOS 与 Android ↔
+Android 文件传输待统一验证 + iOS arm64 基础构建保留 + Windows 待实现”。当前产品
+里程碑不宣称 iPhone/iPad 或 Windows 支持，也不代表发现到的设备已经通过身份认证。
 
 ## 20. 官方平台资料
 

@@ -2,7 +2,8 @@
 
 - Status: Accepted design; providers carry individual support labels
 - Updated: 2026-08-05
-- Scope: Android, iOS/iPadOS, Windows, and macOS
+- Active scope: Android ↔ macOS, Android ↔ Android, and macOS ↔ macOS regression
+- Deferred scope: iOS/iPadOS and Windows
 
 ## Decision summary
 
@@ -15,6 +16,11 @@ There is no single public infrastructure-free bearer for every platform pair.
 Halo therefore implements independent providers and exposes their availability
 honestly:
 
+- Android and macOS are the active product platforms. Android ↔ macOS and
+  Android ↔ Android are required transfer paths; macOS ↔ macOS is a regression
+  path. iOS/iPadOS and Windows product work is deferred by
+  [ADR 0010](../adr/0010-android-macos-first-delivery.md).
+
 - LAN IP is the universal baseline.
 - Apple peer-to-peer Wi-Fi is the direct Apple-to-Apple path.
 - Wi-Fi Direct is the direct Android/Windows path.
@@ -24,9 +30,14 @@ honestly:
   sender's eligible current Wi-Fi, after which it is an ordinary LAN path.
 - A separate authenticated BLE bootstrap may carry a one-use Wi-Fi invitation;
   ordinary BLE discovery still carries no secret and BLE never carries files.
-- A user-created hotspot is an optional LAN fallback.
+- A user-created hotspot is the local fallback after an existing shared LAN.
 - BLE never carries file contents.
 - Cellular and Internet paths are prohibited for the nearby-only product mode.
+
+The active preference is strict: an existing shared Wi-Fi/Ethernet LAN first,
+then a user-prepared local hotspot, otherwise no transfer path. Direct providers
+remain future optimizations and cellular/public-Internet/relay paths are not
+implemented or scheduled.
 
 `planned` below means the provider is part of the architecture and delivery
 plan. It does not mean the current repository has passed its device matrix.
@@ -74,8 +85,8 @@ device-validated support:
   receive consent, cancellation, and terminal events. Android's document
   picker and macOS's open panel copy the selected source into private native
   storage; Dart receives paths and state but never file bytes. A host loopback
-  test passes and Android/macOS Debug artifacts compile. Physical
-  Android↔macOS transfer is still unverified.
+  test passes and Android/macOS Debug artifacts compile. Physical Android ↔
+  macOS and Android ↔ Android file transfer are still unverified.
 - Wi-Fi Direct and Wi-Fi Aware platform adapters are not implemented yet.
   Android now reports hardware/runtime availability separately from
   `provider_not_implemented`; Apple reports Wi-Fi Direct as unsupported and
@@ -92,6 +103,13 @@ budget. The Apple demo still uses a narrower integration: it prefers a
 correlated Apple P2P candidate, otherwise uses LAN, and does not yet plug both
 native and Quinn connections into the common authenticated broker.
 
+The current unmetered-only implementation is sufficient for ordinary shared
+LAN but is not yet the final hotspot policy. A local-only hotspot may be marked
+metered or expensive by the OS even though Halo packets remain on-link. Before
+hotspot support ships, the broker and platform attestations must distinguish an
+explicitly user-approved, interface-bound local-only network from a cellular or
+public route; merely relaxing the cost flag is not sufficient.
+
 The core additionally permits only one outbound ceremony for the same
 case-normalized discovery reference at a time, including native platform
 channels. After authentication, the cryptographic peer ID is the authority: a
@@ -104,7 +122,7 @@ validated before ownership crosses into Rust. The QUIC server disables active
 address migration. Android passively tracks Wi-Fi and Ethernet paths with
 `registerNetworkCallback`, then creates an unconnected UDP socket and selects
 an eligible `Network` (preferring the active eligible route),
-requires `NET_CAPABILITY_NOT_METERED`, binds the socket to that exact Android
+currently requires `NET_CAPABILITY_NOT_METERED`, binds the socket to that exact Android
 `Network`, duplicates and detaches its descriptor,
 and transfers ownership directly from Kotlin to Rust through a narrow JNI
 boundary. Dart never observes the descriptor. Rust consumes the socket once
@@ -119,7 +137,7 @@ session. A change in the process default route does not move it. If the selected
 discovery restart; hot endpoint replacement is not implemented yet.
 
 iOS and macOS now apply the same ownership rule without routing a descriptor
-through Dart. `NWPath` must be satisfied, IPv4-capable, non-expensive, and not
+through Dart. `NWPath` must currently be satisfied, IPv4-capable, non-expensive, and not
 constrained. Swift chooses a Wi-Fi or wired-Ethernet `NWInterface`, creates an
 IPv4 UDP socket, applies `IP_BOUND_IF` with that interface's system index,
 binds an ephemeral port, and transfers the descriptor once through the native
@@ -180,8 +198,10 @@ separate.
 5. QUIC 0-RTT is disabled for pairing, offers, acceptance, and file data.
 6. A socket or Network.framework connection must be pinned to an eligible
    Wi-Fi, Ethernet, Apple P2P, Wi-Fi Direct, or Wi-Fi Aware path.
-7. Cellular, VPN-only, public-Internet, and relay paths are rejected in nearby
-   mode. The transport must not silently migrate to them.
+7. Cellular, VPN-only, public-Internet, and relay paths are always rejected.
+   The transport must not silently migrate to them. An explicitly approved
+   local-only hotspot remains a local-network path even if the OS reports its
+   cost as metered or expensive.
 8. Each provider reports `unsupported`, `permission_required`,
    `permission_denied`, `hardware_off`, `temporarily_unavailable`, `ready`, or
    `failed` independently.
@@ -198,16 +218,16 @@ separate.
 
 | Provider | Android | iOS/iPadOS | Windows | macOS | Current Halo status |
 | --- | --- | --- | --- | --- | --- |
-| Existing LAN Wi-Fi | Yes | Yes | Yes | Yes | Experimental on Android/iOS/macOS; Windows planned |
+| Existing LAN Wi-Fi | Yes | Yes | Yes | Yes | Active on Android/macOS; iOS foundation deferred; Windows planned |
 | Export current personal Wi-Fi credential | No for ordinary apps | No for ordinary apps | Conditional: native WLAN profile permission; plaintext defaults to local administrators | Conditional: CoreWLAN/Keychain and user authorization | Planned onboarding source; never assumed |
 | Join supplied infrastructure Wi-Fi | OS-mediated request | `NEHotspotConfiguration`, user authorized | Native WLAN profile/connect APIs, policy-dependent | CoreWLAN, policy-dependent | Planned onboarding sink |
 | Ethernet LAN | Device-dependent | Adapter-dependent | Yes | Yes | Core support; device validation incomplete |
-| User-created hotspot LAN | Can host/join, OS/vendor-dependent | User-managed host/join | Can host/join | Can host/join | Guided fallback planned; never assumed |
+| User-created hotspot LAN | `LocalOnlyHotspot` host and OS-mediated join where supported | User-managed host/join | Can host/join | User-managed join/host where available | Active fallback plan for Android/macOS pairs; deferred elsewhere |
 | Apple peer-to-peer Wi-Fi | No | Yes | No | Yes | Planned; authenticated native/Rust control bridge implemented, real-device gate pending |
 | Wi-Fi Direct | Yes | No general API | Yes | No general API | Planned Android/Windows provider |
 | Wi-Fi Aware / NAN | Android 8+ when hardware/runtime available | iOS/iPadOS 26 on documented supported hardware | No documented Halo-targeted app API | Not currently documented as a supported host | Planned Android and Android↔Apple provider |
 | BLE file data plane | Rejected | Rejected | Rejected | Rejected | Rendezvous plus authenticated onboarding bootstrap only |
-| Cellular/Internet | Prohibited | Prohibited | Not applicable to normal PCs | Not applicable to normal Macs | No fallback |
+| Cellular/Internet/relay | Prohibited | Prohibited | Prohibited | Prohibited | Unsupported; no fallback infrastructure |
 
 The absence of a public API is a platform boundary, not a reason to emulate or
 reverse engineer a private protocol.
@@ -510,11 +530,17 @@ it. The default preference is:
 
 1. an already-authenticated healthy session;
 2. an already-available, unmetered LAN path;
-3. a previously approved and currently available direct P2P path;
-4. a user-selected infrastructure Wi-Fi onboarding attempt when the source can
+3. a user-selected infrastructure Wi-Fi onboarding attempt when the source can
    provide an authorized credential and an authenticated bootstrap carrier;
-5. a new Apple P2P, Wi-Fi Direct, or Wi-Fi Aware path requiring system UI;
-6. a user-guided hotspot LAN.
+4. a user-guided local-only hotspot LAN;
+5. a previously approved direct P2P path, once that deferred provider enters the
+   active platform milestone;
+6. a new Apple P2P, Wi-Fi Direct, or Wi-Fi Aware path requiring system UI, once
+   that provider is activated.
+
+For the active Android/macOS matrix, only tiers 1–4 are product paths. If they
+fail, Halo reports no transfer path; it does not proceed to cellular or the
+public Internet.
 
 Actual reachability, measured handshake time, repeated failures, user action,
 and runtime power/cost status modify the score. Provider kind alone never
@@ -530,7 +556,8 @@ The default host-side policy is fail-closed:
 | Property | Default decision |
 | --- | --- |
 | Path class | Only local-network or peer-to-peer |
-| Cost | Unmetered only; metered and unknown cost rejected |
+| Automatic shared-LAN cost | Unmetered only; metered and unknown cost rejected |
+| Explicit hotspot cost | May be metered/expensive only when the platform proves a user-approved, interface-bound local-only Wi-Fi path to the peer |
 | Interface ownership | Established channel must prove it is bound to the validated OS interface/network |
 | Automatic candidates | Bounded parallel race with 100 ms staggering |
 | Candidates requiring system UI | Tried only after automatic failure, serially, maximum one prompt per explicit user action |
@@ -538,14 +565,16 @@ The default host-side policy is fail-closed:
 | Remembered identity change | Close all attempts and block the peer |
 | Explicit user rejection | Close all attempts; do not prompt on another bearer |
 
-Products may explicitly relax metered or unknown-cost policy outside nearby
-mode, but the nearby Demo does not. A provider cannot label a path unmetered by
-guessing from an address range.
+The hotspot exception is not a general `allow_metered` switch. It admits only a
+user-approved local-network candidate with exact Wi-Fi/interface ownership and
+verified peer-local reachability. Cellular, Internet, VPN-only, relay, and
+unknown path classes remain prohibited. A provider cannot label a path local or
+unmetered by guessing from an address range.
 
 ## Cellular and metered-path policy
 
-Nearby mode has no cellular fallback. Enforcing that requires more than
-rejecting public IP addresses:
+Halo has no cellular fallback. Enforcing that requires more than rejecting
+public IP addresses:
 
 - Android sockets are bound to the selected Wi-Fi, Wi-Fi Direct, or Wi-Fi Aware
   `Network`; a cellular `Network` is never supplied to Quinn.
@@ -556,8 +585,19 @@ rejecting public IP addresses:
 - macOS LAN sockets bind to an eligible local interface; Apple P2P uses the
   Network.framework path selected for that provider.
 
+An Android Local-Only Hotspot is different from cellular transfer. Android
+documents it as a network without Internet access, intended for communication
+between connected devices. Halo may accept such a path after explicit user
+action even if a joining OS classifies its cost as metered or expensive. The
+socket must remain bound to the hotspot Wi-Fi interface, the peer endpoint must
+be verified on that local network, and the candidate must not claim Internet
+or cellular path class. Android clients join through an OS-mediated
+`WifiNetworkSpecifier` request; macOS joins through its user-authorized Wi-Fi
+flow. Hotspot credentials follow ADR 0008/0009 and never cross raw discovery or
+Dart.
+
 If the eligible path disappears, Halo pauses or fails the transfer and offers a
-new local connection. It never continues on 4G/5G. Diagnostics record only a
+new local connection. It never continues on 4G/5G or a public route. Diagnostics record only a
 redacted path category, not SSID, BSSID, interface name, or full address.
 
 The implemented session rule is fail-and-reauthenticate: when QUIC closes, core
@@ -621,33 +661,46 @@ not silently emulated; they require later versioned designs.
 
 ### Gate A — common LAN
 
-All six platform pairs complete QUIC hello and cancellation tests on a shared
-LAN. Wi-Fi-off/BLE-on produces `No transfer path`, and cellular remains unused.
+Android ↔ macOS and Android ↔ Android complete bidirectional QUIC, pairing,
+single-file, cancellation, integrity, and route-loss tests on a shared LAN.
+macOS ↔ macOS remains a regression case. Wi-Fi-off/BLE-on produces `No transfer
+path`, and cellular remains unused.
 
-### Gate B — Apple peer-to-peer
+### Gate B — user-prepared hotspot LAN
+
+A user-prepared local hotspot passes with both a macOS joiner and an Android
+joiner, including role reversal at the Halo transfer layer. Cost classification
+does not turn the local hotspot into a general metered-path exception. Hotspot
+loss closes the session, no packet migrates to cellular, and credentials do not
+reach Dart, logs, or unauthenticated discovery. Endpoint-hosted hotspot modes
+remain outside this gate until the hosting OS exposes, or Halo can otherwise
+prove with a reviewed native adapter, exact ownership of the serving interface.
+
+### Deferred gate — Apple peer-to-peer
 
 Apple device pairs pass the no-AP matrix and native-QUIC exporter tests.
 
-### Gate C — Wi-Fi Direct
+### Deferred gate — Wi-Fi Direct
 
 Android/Windows combinations pass group formation, UDP reachability, QUIC, and
 teardown tests across representative vendors and chipsets.
 
-### Gate D — Wi-Fi Aware
+### Deferred gate — Wi-Fi Aware
 
 Android and supported Apple combinations pass NAN service, system pairing,
 native-QUIC/Quinn interoperability, and availability-change tests.
 
-### Gate E — channel broker
+### Gate C — channel broker
 
 Candidate ranking, bounded racing, cancellation, fallback, reconnection, and UI
 capability states pass without leaking metadata or silently changing to a
 prohibited path.
 
-### Gate F — infrastructure Wi-Fi onboarding and BLE bootstrap
+### Gate D — infrastructure Wi-Fi onboarding and BLE bootstrap
 
-Windows/macOS authorized export, Android/iOS join, QR/manual input, secret
-lifetime, peer verification, cleanup, and explicit fallback pass ADR 0008.
+macOS authorized export, Android join, QR/manual input, secret lifetime, peer
+verification, cleanup, and explicit fallback pass ADR 0008. Windows export and
+iOS/iPadOS join remain deferred.
 TLS-over-GATT framing, exporter binding, first-contact verification, role
 reversal, cancellation, and negative vectors pass ADR 0009. Enterprise/managed
 profiles fail closed, and no credential reaches advertisements, raw GATT, Dart,
@@ -670,6 +723,8 @@ success or same-process loopback is not provider support.
 - Apple: [`sec_protocol_metadata_create_secret`](https://developer.apple.com/documentation/security/sec_protocol_metadata_create_secret%28_%3A_%3A_%3A_%3A%29)
 - Android: [Wi-Fi Direct overview](https://developer.android.com/develop/connectivity/wifi/wifi-direct)
 - Android: [Wi-Fi Aware overview](https://developer.android.com/develop/connectivity/wifi/wifi-aware)
+- Android: [Local-Only Hotspot](https://developer.android.com/develop/connectivity/wifi/localonlyhotspot)
+- Android: [`WifiNetworkSpecifier`](https://developer.android.com/reference/android/net/wifi/WifiNetworkSpecifier)
 - Android: [`Network.bindSocket`](https://developer.android.com/reference/android/net/Network#bindSocket(java.net.DatagramSocket))
 - Android: [`ConnectivityManager.registerNetworkCallback`](https://developer.android.com/reference/android/net/ConnectivityManager#registerNetworkCallback(android.net.NetworkRequest,android.net.ConnectivityManager.NetworkCallback))
 - Android: [`ParcelFileDescriptor.fromDatagramSocket`](https://developer.android.com/reference/android/os/ParcelFileDescriptor#fromDatagramSocket(java.net.DatagramSocket))

@@ -13,7 +13,8 @@ use std::{
     )
 )]
 pub(crate) enum RegisteredLanEndpoint {
-    Bound(UdpSocket),
+    SharedUnmetered(UdpSocket),
+    UserApprovedHotspot(UdpSocket),
     Disabled,
 }
 
@@ -37,7 +38,12 @@ static LAN_ENDPOINT: OnceLock<Mutex<LanEndpointRegistry>> = OnceLock::new();
 
 #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
 pub(crate) fn register_bound_lan_socket(socket: UdpSocket) -> Result<(), ()> {
-    replace(RegisteredLanEndpoint::Bound(socket))
+    replace(RegisteredLanEndpoint::SharedUnmetered(socket))
+}
+
+#[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
+pub(crate) fn register_user_approved_hotspot_socket(socket: UdpSocket) -> Result<(), ()> {
+    replace(RegisteredLanEndpoint::UserApprovedHotspot(socket))
 }
 
 #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
@@ -71,7 +77,7 @@ mod tests {
         let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
             .unwrap_or_else(|error| panic!("bind: {error}"));
         let mut registry = LanEndpointRegistry::default();
-        registry.replace(RegisteredLanEndpoint::Bound(socket));
+        registry.replace(RegisteredLanEndpoint::SharedUnmetered(socket));
         registry.replace(RegisteredLanEndpoint::Disabled);
 
         assert!(matches!(

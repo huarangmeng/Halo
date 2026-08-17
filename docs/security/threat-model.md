@@ -7,6 +7,10 @@
 
 This revision covers discovery, multi-bearer local channel selection, pairing,
 and the experimental single-file transfer slice on a hostile local network.
+The active product matrix is Android ↔ macOS and Android ↔ Android, with
+macOS ↔ macOS as a regression path. iOS/iPadOS and Windows product validation
+is deferred. Cellular, public-Internet, NAT-traversal, and relay transport are
+outside the product boundary and must be rejected.
 Authenticated resumable manifests, multi-file atomicity, and durable resume
 data remain out of scope.
 
@@ -64,6 +68,7 @@ sensitive diagnostics.
 | Unexpected background radio use | Discovery continues off-screen only after the user explicitly starts it; Android shows an ongoing foreground-service notification and Stop tears down native and Rust sessions | Put each app in the background, verify disclosure and continuity, then press Stop and verify BLE, LAN sockets, and the Android service are gone |
 | Bearer spoofing or confused-deputy selection | Platform adapters return opaque candidates; Rust requires the expected provider class, repeats Halo authentication, and never treats link pairing as trust | Substitute candidates across providers and verify no peer identity, consent, or trust record transfers to the new path |
 | Cellular/public-route disclosure | Bind the socket or native QUIC connection to the selected eligible interface/network, disable multipath, reject public candidates, and fail closed on an ineligible path update; address ranges alone are insufficient | Supply public candidates, VPN routes, Wi-Fi-to-cellular transitions, and private addresses routed through an ineligible interface; verify no pairing or file bytes use that path |
+| Hotspot/cellular classification confusion | Admit a metered or expensive path only as an explicitly user-approved, interface-bound local-only hotspot candidate with verified peer-local reachability; never turn this into a general metered-path opt-in | Mark local hotspots metered/expensive, expose a concurrent cellular default route, substitute a public endpoint, and remove the hotspot; only on-link peer traffic is allowed and path loss closes the session |
 | Silent QUIC path migration | Disable server-side active migration, require a provider-attested interface-bound path, and create a new QUIC connection plus Halo authentication after bearer loss | Change the routed interface after authentication and verify the old session cannot continue on cellular, VPN, or another unapproved adapter |
 | Stale authenticated session after disconnect | Monitor QUIC closure, remove the session, cancel session transfer tokens, release capacity, and require fresh exporter-bound authentication on reconnect | Close either peer during idle, consent, control, and data phases; the old session disappears and cannot start another transfer |
 | P2P resource exhaustion | Bound concurrent link establishment, system prompts, groups, listeners, and candidate lifetime independently per provider | Flood BLE/NAN/Wi-Fi Direct hints and verify bounded work, rate-limited prompts, cancellation, and complete resource teardown |
@@ -111,6 +116,9 @@ sensitive diagnostics.
 13. An authenticated BLE bootstrap may carry one Wi-Fi invitation but never file
     metadata or bytes. Joining the expected SSID does not authorize a peer; the
     LAN path requires a fresh nonce probe and QUIC/Halo authentication.
+14. A hotspot may be reported as metered or expensive without becoming a
+    cellular path. It is eligible only after explicit user action, exact Wi-Fi
+    binding, local reachability verification, and fresh Halo authentication.
 
 ## Residual risks and required device validation
 
@@ -129,16 +137,30 @@ sensitive diagnostics.
   availability differ by device and distribution mode.
 - Local denial of service, Wi-Fi roaming, captive portals, VPN routing, and
   aggressive mobile lifecycle suspension can still interrupt pairing.
-- The Android Demo now transfers a UDP socket bound to an eligible, unmetered
-  Android `Network` directly into Quinn. If native preparation is absent,
+- The Android Demo transfers a UDP socket bound to an eligible Android `Network`
+  directly into Quinn. Automatic shared LAN still requires `NOT_METERED`.
+  A hotspot join is admitted only after foreground user action through
+  `WifiNetworkSpecifier`, when the selected Wi-Fi `Network` has no Internet or
+  VPN capability, and it is registered with the distinct user-approved scope.
+  If native preparation is absent,
   ineligible, or fails, Android uses a loopback-only listener rather than a
   wildcard fallback. A default-route change cannot migrate the socket; if the
   selected Android `Network` disappears or becomes ineligible, the UI requires
-  a discovery restart. iOS/macOS now transfer an IPv4 UDP socket only after
-  Swift applies `IP_BOUND_IF` to an eligible, non-expensive, unconstrained
-  Wi-Fi/Ethernet interface; failure registers a loopback-only listener. Apple
+  a discovery restart. Apple transfers an IPv4 UDP socket only after Swift
+  applies `IP_BOUND_IF`. Automatic LAN requires a non-expensive, unconstrained
+  Wi-Fi/Ethernet interface; macOS can separately authorize the current Wi-Fi as
+  a hotspot scope. Failure registers a loopback-only listener. Apple
   IPv6 and Windows still need equivalent exact-interface adapters. Every
   platform's no-cellular guarantee remains a physical-device validation gate.
+- Android hotspot credentials are collected in a native dialog and never cross
+  Dart, discovery, Rust, or logs. Android framework APIs require immutable
+  `String` values, so those managed-memory copies cannot be reliably zeroized;
+  the join request and callback are released immediately on leave or failure.
+- Endpoint-hosted hotspots remain a validation and implementation gap. In
+  particular, Android `LocalOnlyHotspot` exposes reservation/configuration but
+  no public host-side `Network` satisfying the exact socket-binding contract.
+  Halo must not replace that missing proof with a wildcard socket or a general
+  metered-path opt-in.
 - P2P capability depends on OS version, entitlement, hardware, firmware, radio
   coexistence, driver behavior, and system UI. Provider state can change while
   the app is running and must be treated as revocable.
@@ -154,7 +176,9 @@ sensitive diagnostics.
   discovery reference, but a hostile peer can rotate rendezvous identifiers;
   broader durable abuse controls remain a release-hardening requirement.
 
-Before claiming Android ↔ macOS pairing support, physical-device tests must
-cover restart persistence, identity replacement, Wi-Fi switching, cancellation,
-permission denial, app foreground transitions, and at least one active relay
-attempt that produces different codes.
+Before claiming active-platform pairing support, physical-device tests must
+cover Android ↔ macOS and Android ↔ Android in both directions plus the macOS ↔
+macOS regression path, restart persistence, identity replacement, shared Wi-Fi
+and local-only-hotspot switching, cancellation, permission denial, app
+foreground transitions, and at least one active MITM relay attempt that
+produces different codes.

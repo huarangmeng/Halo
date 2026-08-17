@@ -3,8 +3,10 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 Halo is an open, account-free, cross-platform nearby connectivity protocol and
-Rust SDK. Its first reference application transfers files directly between
-Android, iOS, Windows, and macOS through a Flutter UI.
+Rust SDK. Its first delivery target covers Android ↔ macOS and Android ↔ Android
+file transfer through a Flutter UI, with macOS ↔ macOS retained as a regression
+path. iOS/iPadOS and Windows remain planned protocol targets, but their
+remaining product capabilities are deferred.
 
 > Project status: early implementation. The repository now contains one shared
 > Flutter discovery demo for Android, iOS, and macOS, backed by the Rust
@@ -19,22 +21,30 @@ Android, iOS, Windows, and macOS through a Flutter UI.
 > path now retains authenticated QUIC sessions and the Rust single-file engine
 > verifies and safely finalizes bounded chunks. The shared Demo now wires this
 > LAN path to Android/macOS native file pickers and receiver consent without
-> moving file bytes through Dart. The common data-channel broker now enforces
-> unmetered local paths, interface-binding attestation, bounded prompts, and
-> authentication-before-win. Android now transfers an OS-network-bound UDP
-> socket directly from Kotlin to Rust and falls back only to loopback when no
-> eligible unmetered LAN exists. iOS/macOS now bind an IPv4 UDP socket with
-> `IP_BOUND_IF` to an eligible Network.framework Wi-Fi/Ethernet interface and
-> transfer its ownership directly to Rust; Windows LAN binding and Direct/Aware
-> adapters remain pending. Host loopback and host-build checks pass,
-> while physical Android ↔ macOS transfer remains unverified. There is no SDK
+> moving file bytes through Dart. The common data-channel broker now separates
+> automatic unmetered shared LAN from lower-priority, explicitly approved local
+> hotspot paths while enforcing interface binding, bounded prompts, and
+> authentication-before-win. Android can join a WPA2 local-only hotspot through
+> `WifiNetworkSpecifier`, bind a UDP socket to that exact OS `Network`, and hand
+> it to Rust without exposing credentials to Dart. macOS can explicitly approve
+> the current Wi-Fi as a hotspot path and binds its IPv4 socket with
+> `IP_BOUND_IF`; ordinary Wi-Fi/Ethernet still requires a non-expensive,
+> unconstrained path by default. Endpoint-hosted hotspot creation is not yet
+> claimed because the host-side exact-path contract still lacks device
+> evidence. Windows LAN binding and Direct/Aware adapters remain pending and
+> are not part of the active Android ↔ macOS
+> milestone. Host loopback and host-build checks pass,
+> while physical Android ↔ macOS and Android ↔ Android transfer remains
+> unverified. There is no SDK
 > release or four-platform validation.
 
 Halo is not an AirDrop implementation and does not attempt to reverse engineer
-Apple's private stack. The near-term promise is smaller and testable: when two
-devices have Halo open and share a reachable local network, they can discover
-one another, establish trust, and transfer files securely without an account or
-cloud relay.
+Apple's private stack. The near-term promise is smaller and testable: when an
+Android device and a Mac have Halo open and share a reachable local network,
+they can discover one another, establish trust, and transfer files securely
+without an account or cloud relay. If no shared network is available, Halo may
+guide the user to prepare a hotspot; it never falls back to cellular or the
+public Internet.
 
 ## Why Halo
 
@@ -62,9 +72,9 @@ protocol to connect safely. A fast demo app alone is not enough.
 
 - **Cross-platform by contract.** Protocol behavior is shared; platform limits
   are exposed explicitly instead of hidden behind optimistic UI.
-- **Local first.** Data travels directly on the local network whenever possible.
-  The MVP has no account, central directory, analytics requirement, or cloud
-  relay.
+- **Local only.** Data travels directly over a shared LAN or a user-prepared
+  hotspot. The MVP has no account, public rendezvous, NAT traversal, analytics
+  requirement, cellular data path, or cloud relay.
 - **Consent before trust.** Seeing a device nearby does not authorize it. New
   peers must be accepted and cryptographically verified.
 - **Private by default.** Encrypt transfers, minimize advertised metadata, and
@@ -94,7 +104,9 @@ protocol to connect safely. A fast demo app alone is not enough.
 
 ### MVP includes
 
-- Android, iOS, Windows, and macOS demo applications
+- Android and macOS demo applications as the active milestone, covering
+  Android ↔ macOS and Android ↔ Android; iOS/iPadOS and Windows remain planned
+  follow-up targets
 - Concurrent foreground discovery using BLE rendezvous, mDNS/DNS-SD, IPv4/IPv6
   presence multicast, directed broadcast, and remembered-endpoint probes
 - Direct encrypted transport over QUIC
@@ -115,8 +127,9 @@ protocol to connect safely. A fast demo app alone is not enough.
   or camera streaming
 - A universal throughput guarantee such as `100 MB/s`
 
-Those exclusions are sequencing decisions, not claims that every item is
-possible on every platform.
+Deferred platform and feature exclusions are sequencing decisions. Cellular,
+public-Internet, NAT-traversal, and relay transport are explicit product
+boundaries unless a future ADR replaces this decision.
 
 The experimental Android demo keeps an explicitly started discovery session
 alive with a visible foreground-service notification. The macOS demo continues
@@ -126,12 +139,12 @@ or iOS background limits.
 
 ## Platform expectations
 
-| Platform | Discovery | Common baseline | Direct data-channel plan |
-| --- | --- | --- | --- |
-| Android | BLE + parallel LAN providers | QUIC over LAN | Wi-Fi Direct and Wi-Fi Aware |
-| iOS/iPadOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Apple peer-to-peer Wi-Fi; Wi-Fi Aware on supported iOS/iPadOS 26 hardware |
-| Windows | WinRT BLE + parallel LAN providers | QUIC over LAN | Wi-Fi Direct |
-| macOS | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Apple peer-to-peer Wi-Fi |
+| Platform | Delivery priority | Discovery | Common baseline | Direct data-channel plan |
+| --- | --- | --- | --- | --- |
+| Android | Active | BLE + parallel LAN providers | QUIC over LAN/hotspot | Wi-Fi Direct and Wi-Fi Aware are later work |
+| macOS | Active | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN/hotspot | Apple peer-to-peer Wi-Fi is later work |
+| iOS/iPadOS | Deferred | CoreBluetooth + Bonjour + LAN presence | QUIC over LAN | Apple peer-to-peer Wi-Fi; Wi-Fi Aware on supported hardware |
+| Windows | Deferred | WinRT BLE + parallel LAN providers | QUIC over LAN | Wi-Fi Direct |
 
 BLE rendezvous is required in the first discovery milestone and runs in parallel
 with LAN providers when permission and hardware allow. It advertises minimal,
@@ -142,13 +155,15 @@ continue running.
 Apple peer-to-peer Wi-Fi, Wi-Fi Direct, and Wi-Fi Aware are committed data
 channel providers, not alternate file protocols. Each establishes an eligible
 local path beneath the same authenticated QUIC and transfer protocol. Platform
-and pair-specific support remains `planned` until its real-device gate passes;
-cellular and Internet paths are never an implicit fallback. See the complete
-[data-channel architecture](docs/architecture/data-channels.md) and
-[ADR 0007](docs/adr/0007-multi-bearer-data-channels.md).
+and pair-specific support remains `planned` until its real-device gate passes.
+The active product path is shared LAN first and a user-prepared hotspot second.
+Cellular, public-Internet, and relay paths are prohibited rather than used as a
+fallback. See the complete [data-channel architecture](docs/architecture/data-channels.md),
+[ADR 0007](docs/adr/0007-multi-bearer-data-channels.md), and the active platform
+scope in [ADR 0010](docs/adr/0010-android-macos-first-delivery.md).
 
 Linux is a desired core/CLI validation target after the protocol workspace is
-running, but a Linux Flutter demo is not part of the first four-platform
+running, but a Linux Flutter demo is not part of the active Android/macOS
 milestone.
 
 ## Architecture
@@ -349,20 +364,28 @@ cross-platform validated until the relevant physical-device matrix passes.
 
 ## Delivery plan
 
+The active plan covers Android ↔ macOS and Android ↔ Android, with macOS ↔
+macOS retained as a regression path. The older four-platform sequence is
+superseded by [ADR 0010](docs/adr/0010-android-macos-first-delivery.md); portable
+protocol compatibility is preserved while iOS/iPadOS and Windows product work
+is deferred.
+
 ### Phase 0 — contracts and risks
 
 - Write protocol framing/state-machine draft and compatibility policy
 - Write threat model and pairing ADR
-- Prototype Rust-to-Flutter calls on all four targets
+- Verify Rust-to-Flutter calls on Android and macOS; keep the contract portable
+  for deferred iOS/iPadOS and Windows work
 - Spike Bonjour/mDNS visibility and QUIC connectivity on real devices
 - Establish CI, reproducible toolchains, license policy, and test fixtures
 
-Exit: all four apps can call one Rust function, report capabilities, and exchange
-an authenticated “hello” on at least one representative LAN.
+Exit: the Android and macOS apps call the same Rust SDK, report capabilities,
+and exchange an authenticated “hello” on a representative LAN.
 
 ### Phase 1 — vertical slice
 
-- macOS ↔ Windows discovery and one-file transfer
+- Android ↔ macOS and Android ↔ Android discovery and one-file transfer in both
+  directions
 - Explicit first-contact verification
 - Streaming I/O, cancellation, progress, digest verification, safe staging
 - Protocol golden vectors and failure-injection integration tests
@@ -372,13 +395,16 @@ no known silent-corruption path.
 
 ### Phase 2 — mobile foreground support
 
-- Android and iOS adapters, permission education, lifecycle handling
-- Desktop ↔ mobile and mobile ↔ mobile interoperability matrix
+- Android and macOS permission education, lifecycle handling, and exact path
+  binding
+- Shared-Wi-Fi and user-guided hotspot interoperability matrix
 - Multi-file offers, destination policy, disk-space errors, retry
 - Signed/notarized development artifacts where applicable
 
-Exit: the core foreground flow passes on Android, iOS, Windows, and macOS real
-devices on supported OS versions.
+Exit: the core foreground flow passes for Android ↔ macOS and Android ↔ Android
+on physical devices, first over shared Wi-Fi and then over a user-prepared
+hotspot. macOS ↔ macOS remains green as a regression case. Cellular-only
+connectivity produces no transfer path.
 
 ### Phase 3 — resumability and SDK preview
 
@@ -401,17 +427,21 @@ protocol specification.
 - Wi-Fi Direct provider and Android ↔ Windows interoperability matrix
 - Wi-Fi Aware provider for supported Android and iOS/iPadOS devices
 - Bounded channel racing, explicit capability UI, teardown, and no-cellular tests
+- Deferred iOS/iPadOS and Windows product wiring and real-device matrices
 - Clipboard or small-message service as the second protocol consumer
 
-These providers are part of Halo's staged data-channel plan. A provider remains
-`planned` until its documented real-device gate passes. Internet rendezvous,
-NAT traversal, cloud relays, and user accounts remain separate non-MVP research.
+These providers are later work and do not block the Android ↔ macOS milestone.
+A provider remains `planned` until its documented real-device gate passes.
+Internet rendezvous, NAT traversal, cloud relays, cellular transfer, and user
+accounts are not supported or scheduled.
 
 ## Success criteria
 
 The first public preview should meet measurable criteria:
 
-- The same protocol implementation transfers files among all four target demos.
+- The same protocol implementation transfers files for Android ↔ macOS and
+  Android ↔ Android; macOS ↔ macOS remains a regression case, and later
+  platforms must reuse that wire contract.
 - Every byte is encrypted in transit and every completed file is verified.
 - First-contact impersonation is detectable through an explicit verification
   ceremony documented in the threat model.

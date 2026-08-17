@@ -1,6 +1,7 @@
 package org.halo.halo_demo
 
 import android.Manifest
+import android.app.AlertDialog
 import android.bluetooth.BluetoothManager
 import android.app.Activity
 import android.content.Context
@@ -14,6 +15,9 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.net.wifi.aware.WifiAwareManager
 import android.os.Build
+import android.text.InputType
+import android.widget.EditText
+import android.widget.LinearLayout
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
 import io.flutter.embedding.engine.FlutterEngine
@@ -36,17 +40,22 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     private var provider: HaloBleProvider? = null
     private var permissionResult: MethodChannel.Result? = null
     private var filePickerResult: MethodChannel.Result? = null
+    private var hotspotJoinResult: MethodChannel.Result? = null
     private var providerTransition = false
     private var providerGeneration = 0L
     private var lanSocketDetail = "local_network_not_prepared"
     private var preparedNetworkHandle: Long? = null
+    private var preparedNetworkIsUserApprovedHotspot = false
+    private var localHotspotDetail = "local_hotspot_not_joined"
     private val observedLanRoutes = mutableMapOf<Network, NetworkCapabilities>()
     private var lanNetworkCallback: ConnectivityManager.NetworkCallback? = null
     private lateinit var identityStore: HaloIdentityStore
+    private lateinit var localHotspotJoiner: HaloLocalHotspotJoiner
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         identityStore = HaloIdentityStore(this)
+        localHotspotJoiner = HaloLocalHotspotJoiner(this)
         ensureLanNetworkCallback()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler(::handleMethodCall)
@@ -70,6 +79,19 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == HOTSPOT_PERMISSION_REQUEST) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            val pending = hotspotJoinResult
+            if (!granted) {
+                hotspotJoinResult = null
+                localHotspotDetail = "local_hotspot_permission_denied"
+                pending?.success(hotspotPayload(false, localHotspotDetail))
+            } else if (pending != null) {
+                showLocalHotspotJoinDialog()
+            }
+            return
+        }
         if (requestCode != PERMISSION_REQUEST) return
         val granted = grantResults.isNotEmpty() &&
             grantResults.all { it == PackageManager.PERMISSION_GRANTED }
@@ -118,6 +140,9 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
     override fun onDestroy() {
         filePickerResult?.error("activity-destroyed", "Activity closed during file selection", null)
         filePickerResult = null
+        hotspotJoinResult?.success(hotspotPayload(false, "local_hotspot_cancelled"))
+        hotspotJoinResult = null
+        localHotspotJoiner.close()
         providerGeneration += 1
         provider?.close()
         provider = null
@@ -139,6 +164,11 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             "start" -> startBle(call, result)
             "updatePresence" -> updatePresence(call, result)
             "stop" -> stopBle(result)
+            "joinLocalHotspot" -> requestLocalHotspotJoin(result)
+            "leaveLocalHotspot" -> {
+                leaveLocalHotspot()
+                result.success(hotspotPayload(false, localHotspotDetail))
+            }
             else -> result.notImplemented()
         }
     }
@@ -217,6 +247,123 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         permissionResult = result
         requestPermissions(missing.toTypedArray(), PERMISSION_REQUEST)
     }
+
+    private fun requestLocalHotspotJoin(result: MethodChannel.Result) {
+        if (provider != null || providerTransition) {
+            result.success(hotspotPayload(false, "local_hotspot_stop_discovery_first"))
+            return
+        }
+        if (hotspotJoinResult != null) {
+            result.error("hotspot-join-in-progress", "A local-hotspot join is already active", null)
+            return
+        }
+        hotspotJoinResult = result
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES),
+                HOTSPOT_PERMISSION_REQUEST,
+            )
+            return
+        }
+        showLocalHotspotJoinDialog()
+    }
+
+    private fun showLocalHotspotJoinDialog() {
+        val ssid = EditText(this).apply {
+            hint = getString(R.string.halo_hotspot_ssid_hint)
+            inputType = InputType.TYPE_CLASS_TEXT
+            importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        val passphrase = EditText(this).apply {
+            hint = getString(R.string.halo_hotspot_passphrase_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (24 * resources.displayMetrics.density).toInt()
+            setPadding(padding, 0, padding, 0)
+            addView(ssid)
+            addView(passphrase)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.halo_hotspot_join_title)
+            .setMessage(R.string.halo_hotspot_join_message)
+            .setView(content)
+            .setPositiveButton(R.string.halo_hotspot_join_action) { _, _ ->
+                joinLocalHotspot(ssid.text.toString(), passphrase.text.toString())
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                finishHotspotJoin(false, "local_hotspot_cancelled")
+            }
+            .setOnCancelListener {
+                finishHotspotJoin(false, "local_hotspot_cancelled")
+            }
+            .show()
+    }
+
+    private fun joinLocalHotspot(ssid: String, passphrase: String) {
+        localHotspotDetail = "local_hotspot_joining"
+        localHotspotJoiner.join(ssid, passphrase) { joinResult ->
+            runOnUiThread {
+                when (joinResult) {
+                    is HaloLocalHotspotJoiner.Result.Ready -> {
+                        val capabilities = getSystemService(ConnectivityManager::class.java)
+                            ?.getNetworkCapabilities(joinResult.network)
+                        if (capabilities != null &&
+                            isEligibleUserApprovedHotspotRoute(capabilities) &&
+                            bindPreparedLanSocket(joinResult.network, userApprovedHotspot = true)
+                        ) {
+                            localHotspotDetail = "local_hotspot_joined"
+                            finishHotspotJoin(true, localHotspotDetail)
+                        } else {
+                            localHotspotDetail = "local_hotspot_binding_failed"
+                            localHotspotJoiner.close()
+                            finishHotspotJoin(false, localHotspotDetail)
+                        }
+                    }
+                    HaloLocalHotspotJoiner.Result.Lost -> {
+                        preparedNetworkHandle = null
+                        preparedNetworkIsUserApprovedHotspot = false
+                        HaloNativeSocketBridge.disableLan()
+                        localHotspotDetail = "local_hotspot_lost"
+                    }
+                    HaloLocalHotspotJoiner.Result.InvalidCredentials ->
+                        finishHotspotJoin(false, "local_hotspot_invalid_credentials")
+                    HaloLocalHotspotJoiner.Result.Unavailable ->
+                        finishHotspotJoin(false, "local_hotspot_unavailable")
+                    HaloLocalHotspotJoiner.Result.Cancelled ->
+                        finishHotspotJoin(false, "local_hotspot_cancelled")
+                    HaloLocalHotspotJoiner.Result.Failed ->
+                        finishHotspotJoin(false, "local_hotspot_failed")
+                }
+            }
+        }
+    }
+
+    private fun finishHotspotJoin(ready: Boolean, detail: String) {
+        localHotspotDetail = detail
+        val pending = hotspotJoinResult
+        hotspotJoinResult = null
+        pending?.success(hotspotPayload(ready, detail))
+    }
+
+    private fun leaveLocalHotspot() {
+        localHotspotJoiner.close()
+        preparedNetworkHandle = null
+        preparedNetworkIsUserApprovedHotspot = false
+        HaloNativeSocketBridge.disableLan()
+        localHotspotDetail = "local_hotspot_not_joined"
+        lanSocketDetail = "local_network_not_prepared"
+    }
+
+    private fun hotspotPayload(ready: Boolean, detail: String): Map<String, Any> = mapOf(
+        "ready" to ready,
+        "detail" to detail,
+    )
 
     private fun startBle(call: MethodCall, result: MethodChannel.Result) {
         val presence = call.argument<ByteArray>("presence")
@@ -339,6 +486,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         bluetoothCapability(),
         wifiCapability(),
         localNetworkCapability(),
+        localHotspotCapability(),
         capability("apple_peer_to_peer", "unsupported", "apple_p2p_unsupported_on_android"),
         wifiDirectCapability(),
         wifiAwareCapability(),
@@ -423,7 +571,24 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             val preparedRoute = connectivity?.let(::lanRoutes)?.firstOrNull {
                 it.network.networkHandle == preparedNetworkHandle
             }
-            if (preparedRoute != null && isEligibleLanRoute(preparedRoute.capabilities)) {
+            val preparedCapabilities = preparedRoute?.capabilities ?: run {
+                val hotspotNetwork = localHotspotJoiner.network
+                if (connectivity != null &&
+                    hotspotNetwork?.networkHandle == preparedNetworkHandle
+                ) {
+                    connectivity.getNetworkCapabilities(hotspotNetwork)
+                } else {
+                    null
+                }
+            }
+            val routeIsStillEligible = preparedCapabilities != null && if (
+                preparedNetworkIsUserApprovedHotspot
+            ) {
+                isEligibleUserApprovedHotspotRoute(preparedCapabilities)
+            } else {
+                isEligibleLanRoute(preparedCapabilities)
+            }
+            if (routeIsStillEligible) {
                 capability("local_network", "ready", "local_network_socket_bound")
             } else {
                 capability(
@@ -439,11 +604,43 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
     }
 
+    private fun localHotspotCapability(): Map<String, String> {
+        val state = when (localHotspotDetail) {
+            "local_hotspot_joined" -> "ready"
+            "local_hotspot_joining" -> "starting"
+            "local_hotspot_permission_denied" -> "permission_denied"
+            "local_hotspot_not_joined", "local_hotspot_cancelled" -> "stopped"
+            "local_hotspot_unavailable", "local_hotspot_lost",
+            "local_hotspot_stop_discovery_first" -> "temporarily_unavailable"
+            else -> "failed"
+        }
+        return capability("local_hotspot", state, localHotspotDetail)
+    }
+
     private fun prepareLanSocket() {
         preparedNetworkHandle = null
+        preparedNetworkIsUserApprovedHotspot = false
         try {
             ensureLanNetworkCallback()
             val connectivity = getSystemService(ConnectivityManager::class.java)
+            val joinedHotspot = localHotspotJoiner.network
+            val hotspotCapabilities = if (joinedHotspot == null) {
+                null
+            } else {
+                connectivity?.getNetworkCapabilities(joinedHotspot)
+            }
+            if (joinedHotspot != null &&
+                hotspotCapabilities != null &&
+                isEligibleUserApprovedHotspotRoute(hotspotCapabilities)
+            ) {
+                if (bindPreparedLanSocket(joinedHotspot, userApprovedHotspot = true)) {
+                    localHotspotDetail = "local_hotspot_joined"
+                    return
+                }
+                HaloNativeSocketBridge.disableLan()
+                lanSocketDetail = "local_network_binding_failed"
+                return
+            }
             val routes = connectivity?.let(::lanRoutes).orEmpty()
             val activeNetwork = connectivity?.activeNetwork
             val selectedRoute = routes
@@ -460,22 +657,36 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
                 }
                 return
             }
-            DatagramSocket(null).use { socket ->
-                socket.reuseAddress = false
-                socket.bind(InetSocketAddress(0))
-                selectedRoute.network.bindSocket(socket)
-                if (!HaloNativeSocketBridge.registerBoundSocket(socket)) {
-                    HaloNativeSocketBridge.disableLan()
-                    lanSocketDetail = "local_network_binding_failed"
-                    return
-                }
+            if (!bindPreparedLanSocket(selectedRoute.network, userApprovedHotspot = false)) {
+                HaloNativeSocketBridge.disableLan()
+                lanSocketDetail = "local_network_binding_failed"
+                return
             }
-            preparedNetworkHandle = selectedRoute.network.networkHandle
-            lanSocketDetail = "local_network_socket_bound"
         } catch (_: Exception) {
             HaloNativeSocketBridge.disableLan()
             lanSocketDetail = "local_network_binding_failed"
         }
+    }
+
+    private fun bindPreparedLanSocket(
+        network: Network,
+        userApprovedHotspot: Boolean,
+    ): Boolean {
+        DatagramSocket(null).use { socket ->
+            socket.reuseAddress = false
+            socket.bind(InetSocketAddress(0))
+            network.bindSocket(socket)
+            val registered = if (userApprovedHotspot) {
+                HaloNativeSocketBridge.registerUserApprovedHotspotSocket(socket)
+            } else {
+                HaloNativeSocketBridge.registerBoundSocket(socket)
+            }
+            if (!registered) return false
+        }
+        preparedNetworkHandle = network.networkHandle
+        preparedNetworkIsUserApprovedHotspot = userApprovedHotspot
+        lanSocketDetail = "local_network_socket_bound"
+        return true
     }
 
     private fun lanRoutes(connectivity: ConnectivityManager): List<LanRoute> =
@@ -536,6 +747,13 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
             !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
 
+    private fun isEligibleUserApprovedHotspotRoute(
+        capabilities: NetworkCapabilities,
+    ): Boolean =
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+            !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+            !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+
     private fun wifiDirectCapability(): Map<String, String> =
         if (packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_DIRECT)) {
             capability("wifi_direct", "stopped", "wifi_direct_provider_not_implemented")
@@ -595,6 +813,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         private const val IDENTITY_CHANNEL = "org.halo.identity/storage"
         private const val PERMISSION_REQUEST = 7101
         private const val FILE_PICK_REQUEST = 7102
+        private const val HOTSPOT_PERMISSION_REQUEST = 7103
         private const val ACCESS_LOCAL_NETWORK_PERMISSION =
             "android.permission.ACCESS_LOCAL_NETWORK"
     }

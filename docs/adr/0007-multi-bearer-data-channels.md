@@ -48,6 +48,11 @@ Halo adopts a multi-bearer data-channel layer below authenticated QUIC:
    bearers. A path change to cellular fails closed and requires a new eligible
    local path and a new authenticated connection.
 
+The active delivery milestone and its path order are defined by
+[ADR 0010](0010-android-macos-first-delivery.md): Android/macOS platforms first,
+including Android ↔ macOS and Android ↔ Android, shared LAN before a
+user-prepared hotspot, and no cellular or Internet fallback.
+
 All providers produce opaque `LinkCandidate` handles and explicit capability
 state. `halo-core` races eligible candidates with bounded concurrency. The
 winner must establish Halo QUIC, export the standard pairing channel binding,
@@ -94,20 +99,26 @@ required before any provider moves from `planned` to `experimental` or `beta`.
 The complete design and support matrix are in
 [`docs/architecture/data-channels.md`](../architecture/data-channels.md).
 
+iOS/iPadOS and Windows remain protocol targets, but their remaining product
+capabilities and device matrices are deferred until the active Android/macOS
+local-transfer matrix passes. Deferral does not change existing wire
+compatibility or evidence-based support labels.
+
 ## Implementation status
 
-The Rust broker now enforces known unmetered local/P2P paths, exact interface
-binding, bounded automatic racing, deferred serial system prompts, and
-authentication-before-win. Recoverable authentication failure falls through;
+The Rust broker now distinguishes automatic unmetered shared LAN from a
+lower-priority, explicitly approved local-hotspot scope, while enforcing exact
+interface binding, bounded automatic racing, deferred serial system prompts,
+and authentication-before-win. Recoverable authentication failure falls through;
 identity change and user rejection are peer-wide hard stops. Android and Apple
 launchers expose distinct capability states for all four provider kinds.
 
 Quinn exposes constructors that consume a socket already selected and bound by
 the platform adapter, and the server disables active address migration. The
-core pairing configuration can consume that socket only with explicit
-local/P2P, unmetered, interface-bound path properties and rejects an ineligible
-attestation. A closed QUIC transport is evicted from authenticated sessions and
-cancels its transfer work; reconnection always creates a new authenticated
+core pairing configuration accepts shared LAN only when unmetered, accepts an
+expensive/metered hotspot only with the distinct user-approved scope, and
+rejects unbound or inconsistent attestations. A closed QUIC transport is
+evicted from authenticated sessions and cancels its transfer work; reconnection always creates a new authenticated
 session. Concurrent ceremonies are deduplicated by discovery reference, while
 retained sessions are deduplicated by authenticated cryptographic peer ID.
 The current LAN `PairingService` now retains only an authenticated winner and falls
@@ -118,11 +129,21 @@ directly to Rust through JNI, and Rust consumes it once. Missing or failed
 native preparation produces a loopback-only listener, never a wildcard
 fallback. If the selected Android `Network` disappears or becomes ineligible,
 discovery must restart until endpoint hot replacement exists; changing only
-the default route does not migrate the bound socket. iOS/macOS now select an
-eligible, non-expensive, unconstrained Network.framework Wi-Fi/Ethernet
-interface, apply `IP_BOUND_IF` to a native IPv4 UDP socket, and transfer its
-descriptor directly to the same Rust registry. Missing or failed preparation
+the default route does not migrate the bound socket. Android hotspot joiners
+use an OS-mediated `WifiNetworkSpecifier`; credentials stay inside native UI,
+and only an exact Wi-Fi `Network` without Internet capability is registered as
+user-approved. iOS/macOS select an eligible, non-expensive, unconstrained
+Network.framework Wi-Fi/Ethernet interface for automatic LAN. macOS may also
+explicitly approve the current Wi-Fi as a lower-priority hotspot scope. Both
+paths apply `IP_BOUND_IF` to a native IPv4 UDP socket and transfer its descriptor
+directly to the same Rust registry. Missing or failed preparation
 also produces a loopback-only listener. Apple IPv6 binding, Windows LAN
 binding, common-broker integration, and Wi-Fi Direct/Wi-Fi Aware providers
-remain incomplete. Therefore these host-built integrations do not advance any
-provider's support label before device tests.
+remain incomplete. Creating a hotspot on one Halo endpoint is also not yet a
+supported path: Android's public host API does not expose an exact `Network`
+that satisfies the current socket-ownership contract. Android ↔ macOS and
+Android ↔ Android are the active device-validation targets, with macOS ↔ macOS
+retained as a regression path;
+iOS/iPadOS and Windows work is deferred. Therefore these host-built integrations
+do not advance any provider's support label before the corresponding device
+tests.

@@ -200,6 +200,30 @@ abstract class AppLocalizations {
   /// **'Stop'**
   String get stop;
 
+  /// No description provided for @localHotspotJoin.
+  ///
+  /// In en, this message translates to:
+  /// **'Join local hotspot'**
+  String get localHotspotJoin;
+
+  /// No description provided for @localHotspotUseCurrentWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Use current Wi-Fi as local hotspot'**
+  String get localHotspotUseCurrentWifi;
+
+  /// No description provided for @localHotspotLeave.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave hotspot'**
+  String get localHotspotLeave;
+
+  /// No description provided for @localHotspotStopUsingCurrentWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop hotspot use'**
+  String get localHotspotStopUsingCurrentWifi;
+
   /// No description provided for @nearbyDevices.
   ///
   /// In en, this message translates to:
@@ -458,6 +482,12 @@ abstract class AppLocalizations {
   /// **'Local network'**
   String get capabilityLocalNetwork;
 
+  /// No description provided for @capabilityLocalHotspot.
+  ///
+  /// In en, this message translates to:
+  /// **'Local-only hotspot'**
+  String get capabilityLocalHotspot;
+
   /// No description provided for @capabilityApplePeerToPeer.
   ///
   /// In en, this message translates to:
@@ -607,6 +637,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The local network changed; restart discovery to bind a new QUIC socket.'**
   String get capabilityLocalNetworkRestartRequired;
+
+  /// No description provided for @capabilityLocalHotspotNotJoined.
+  ///
+  /// In en, this message translates to:
+  /// **'No user-approved local hotspot is joined.'**
+  String get capabilityLocalHotspotNotJoined;
+
+  /// No description provided for @capabilityLocalHotspotJoining.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for Android to join the selected local-only hotspot.'**
+  String get capabilityLocalHotspotJoining;
+
+  /// No description provided for @capabilityLocalHotspotJoined.
+  ///
+  /// In en, this message translates to:
+  /// **'A user-approved local-only hotspot is pinned for the next discovery session.'**
+  String get capabilityLocalHotspotJoined;
+
+  /// No description provided for @capabilityLocalHotspotPermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Nearby Wi-Fi permission is required to join a local hotspot.'**
+  String get capabilityLocalHotspotPermissionDenied;
+
+  /// No description provided for @capabilityLocalHotspotStopDiscoveryFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop discovery before changing the local hotspot.'**
+  String get capabilityLocalHotspotStopDiscoveryFirst;
+
+  /// No description provided for @capabilityLocalHotspotLost.
+  ///
+  /// In en, this message translates to:
+  /// **'The local hotspot was lost; the old QUIC path cannot migrate.'**
+  String get capabilityLocalHotspotLost;
+
+  /// No description provided for @capabilityLocalHotspotInvalidCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'The hotspot name or WPA2 passphrase is invalid.'**
+  String get capabilityLocalHotspotInvalidCredentials;
+
+  /// No description provided for @capabilityLocalHotspotUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Android could not join the requested local-only hotspot.'**
+  String get capabilityLocalHotspotUnavailable;
+
+  /// No description provided for @capabilityLocalHotspotFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Local-hotspot setup failed safely.'**
+  String get capabilityLocalHotspotFailed;
+
+  /// No description provided for @capabilityLocalHotspotBindingFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The hotspot joined, but its socket could not be pinned safely.'**
+  String get capabilityLocalHotspotBindingFailed;
+
+  /// No description provided for @capabilityLocalHotspotCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Local-hotspot setup was cancelled.'**
+  String get capabilityLocalHotspotCancelled;
 
   /// No description provided for @capabilityEthernetConnected.
   ///

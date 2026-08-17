@@ -104,18 +104,17 @@ class HaloDiscoveryPage extends StatelessWidget {
                     const SizedBox(height: 16),
                     _StatusPanel(controller: controller),
                     const SizedBox(height: 16),
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 10,
                       children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: controller.canStart
-                                ? controller.start
-                                : null,
-                            icon: const Icon(Icons.radar),
-                            label: Text(l10n.startDiscovery),
-                          ),
+                        FilledButton.icon(
+                          onPressed: controller.canStart
+                              ? controller.start
+                              : null,
+                          icon: const Icon(Icons.radar),
+                          label: Text(l10n.startDiscovery),
                         ),
-                        const SizedBox(width: 12),
                         OutlinedButton.icon(
                           onPressed: controller.canStop
                               ? controller.stop
@@ -123,9 +122,36 @@ class HaloDiscoveryPage extends StatelessWidget {
                           icon: const Icon(Icons.stop_circle_outlined),
                           label: Text(l10n.stop),
                         ),
+                        if (controller.platform == 'android' ||
+                            controller.platform == 'macos') ...[
+                          if (controller.hasJoinedLocalHotspot)
+                            OutlinedButton.icon(
+                              onPressed: controller.canLeaveLocalHotspot
+                                  ? controller.leaveLocalHotspot
+                                  : null,
+                              icon: const Icon(Icons.link_off),
+                              label: Text(
+                                controller.platform == 'macos'
+                                    ? l10n.localHotspotStopUsingCurrentWifi
+                                    : l10n.localHotspotLeave,
+                              ),
+                            )
+                          else
+                            OutlinedButton.icon(
+                              onPressed: controller.canJoinLocalHotspot
+                                  ? controller.joinLocalHotspot
+                                  : null,
+                              icon: const Icon(Icons.wifi_tethering),
+                              label: Text(
+                                controller.platform == 'macos'
+                                    ? l10n.localHotspotUseCurrentWifi
+                                    : l10n.localHotspotJoin,
+                              ),
+                            ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 20),
                     Text(
                       l10n.nearbyDevices(controller.peers.length),
                       style: Theme.of(context).textTheme.titleLarge,
@@ -948,6 +974,7 @@ String _capabilityNameLabel(AppLocalizations l10n, String name) =>
       'bluetooth' => l10n.capabilityBluetooth,
       'wifi' => l10n.capabilityWifi,
       'local_network' => l10n.capabilityLocalNetwork,
+      'local_hotspot' => l10n.capabilityLocalHotspot,
       'apple_peer_to_peer' => l10n.capabilityApplePeerToPeer,
       'wifi_direct' => l10n.capabilityWifiDirect,
       'wifi_aware' => l10n.capabilityWifiAware,
@@ -979,13 +1006,27 @@ String _capabilityDetailLabel(
   'wifi_state_unavailable' => l10n.capabilityWifiUnsupported,
   'local_network_connected' => l10n.capabilityLocalNetworkConnected,
   'local_network_socket_bound' => l10n.capabilityLocalNetworkSocketBound,
-      'local_network_metered' => l10n.capabilityLocalNetworkMetered,
-      'local_network_constrained' => l10n.capabilityLocalNetworkConstrained,
-      'local_network_vpn' => l10n.capabilityLocalNetworkVpn,
+  'local_network_metered' => l10n.capabilityLocalNetworkMetered,
+  'local_network_constrained' => l10n.capabilityLocalNetworkConstrained,
+  'local_network_vpn' => l10n.capabilityLocalNetworkVpn,
   'local_network_binding_failed' => l10n.capabilityLocalNetworkBindingFailed,
   'local_network_not_prepared' => l10n.capabilityLocalNetworkNotPrepared,
   'local_network_restart_required' =>
     l10n.capabilityLocalNetworkRestartRequired,
+  'local_hotspot_not_joined' => l10n.capabilityLocalHotspotNotJoined,
+  'local_hotspot_joining' => l10n.capabilityLocalHotspotJoining,
+  'local_hotspot_joined' => l10n.capabilityLocalHotspotJoined,
+  'local_hotspot_permission_denied' =>
+    l10n.capabilityLocalHotspotPermissionDenied,
+  'local_hotspot_stop_discovery_first' =>
+    l10n.capabilityLocalHotspotStopDiscoveryFirst,
+  'local_hotspot_lost' => l10n.capabilityLocalHotspotLost,
+  'local_hotspot_invalid_credentials' =>
+    l10n.capabilityLocalHotspotInvalidCredentials,
+  'local_hotspot_unavailable' => l10n.capabilityLocalHotspotUnavailable,
+  'local_hotspot_failed' => l10n.capabilityLocalHotspotFailed,
+  'local_hotspot_binding_failed' => l10n.capabilityLocalHotspotBindingFailed,
+  'local_hotspot_cancelled' => l10n.capabilityLocalHotspotCancelled,
   'ethernet_connected' => l10n.capabilityEthernetConnected,
   'no_local_network_route' => l10n.capabilityNoLocalNetwork,
   'local_network_permission_missing' =>

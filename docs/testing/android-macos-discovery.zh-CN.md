@@ -6,19 +6,27 @@ Rust discovery core。BLE 原生代码只负责调用系统蓝牙 API 和搬运�
 
 ## 当前验证边界
 
+当前产品只验收 Android 与 macOS：Android ↔ macOS、Android ↔ Android 必须双向通过，
+macOS ↔ macOS 作为同实现回归路径。iPhone/iPad 与 Windows 全部后补。数据路径固定为
+共同 Wi-Fi/以太网优先，用户准备的本地热点其次；蜂窝网络、公网和中继不支持。
+
 - 已实现：Flutter UI、Rust FFI、BLE 扫描/广播/GATT、mDNS、IPv4/IPv6 Presence 与
   IPv4 定向广播并行探测。
 - 已接入但待真机验证：经过认证的 QUIC 连接、短码配对、可信设备持久化，以及配对后
   保留的 LAN QUIC 会话。
 - Android 已在启动时把 UDP socket 固定到当前非计费 Wi-Fi/以太网 `Network`，再通过
   JNI 直接把 FD 所有权交给 Rust；无合格网络或绑定失败时仅建立 loopback listener。
-  此路径已通过主机构建，尚未通过本节真机矩阵。
+  用户主动加入 WPA2 仅本地热点时，Android 改用 `WifiNetworkSpecifier` 获得无 Internet
+  的精确 Wi-Fi `Network`；热点凭据只存在于原生 UI。两条路径均已通过主机构建，尚未
+  通过本节真机矩阵。
 - macOS 已使用 Network.framework 选择非昂贵、非低数据模式的 Wi-Fi/以太网接口，
   通过 `IP_BOUND_IF` 固定 IPv4 UDP socket 后直接把 FD 所有权交给 Rust；失败时同样只
-  建立 loopback listener。Apple IPv6 精确绑定与真机路由验证仍未完成。
+  建立 loopback listener。用户也可明确将当前 Wi-Fi 授权为低优先级热点通道，此时
+  允许系统的昂贵/受限标记但仍精确绑定 Wi-Fi 接口。Apple IPv6 精确绑定与真机路由
+  验证仍未完成。
 - 已实现 Rust 单文件传输核心、配对后数据 stream、Flutter 发送/接收确认界面，以及
   Android 文档选择器和 macOS 文件面板。主机回环端到端测试与两端 Debug 编译已通过；
-  Android ↔ macOS 真机文件传输仍待验证，不能据此标记为已支持。
+  Android ↔ macOS、Android ↔ Android 真机文件传输仍待验证，不能据此标记为已支持。
 - 模拟器不能作为 BLE 互通证据；此流程需要一台支持 BLE 的 Android 真机。
 - 当前代码只承诺应用前台运行，不承诺后台发现。
 
@@ -30,7 +38,8 @@ Rust discovery core。BLE 原生代码只负责调用系统蓝牙 API 和搬运�
 - Rust stable 1.94.1，Android arm64 目标
 - macOS 13 或更新版本，Apple Silicon（arm64）
 
-Android 与 Mac 应连接同一可互访局域网，并打开蓝牙。访客 Wi-Fi、AP isolation、VPN、
+首轮 Android 与 Mac 应连接同一可互访局域网，并打开蓝牙。Android ↔ Android 使用
+相同条件重复执行；macOS ↔ macOS 保持回归。访客 Wi-Fi、AP isolation、VPN、
 防火墙和企业网络策略可能分别阻止 LAN Provider；即使 LAN 不可用，BLE 仍应独立报告
 状态，反之亦然。
 
@@ -91,6 +100,25 @@ Android 17 还会请求本地网络访问。macOS 首次使用时需要批准蓝
    新路由；仅改变系统默认路由也不能把已绑定 socket 移到蜂窝或 VPN。
 7. macOS 同样只有在 `local_network_socket_bound` 时允许 LAN 配对；切换接口、启用低
    数据模式或进入昂贵路径后应要求重启或显示不可用，旧 socket 不能跟随默认路由迁移。
+8. 使用第二台 Android 重复发现、配对、发送、接收、拒绝、取消和断网测试；两台设备
+   都必须只保留一个对端条目和一个认证会话。
+
+## 本地热点验收（加入端已接线，仍待统一真机执行）
+
+1. 先使用独立的仅本地热点，让 macOS 在系统设置中加入后点击“将当前 Wi-Fi 用作本地
+   热点”，让 Android 通过 Halo 原生对话框输入 WPA2 SSID/密码并触发系统加入确认。
+   凭据不得进入 Dart、Rust、发现包或日志。
+2. 热点可能被加入端报告为计费或昂贵，但只有携带“用户明确选择 + Wi-Fi 精确绑定 +
+   对端本地可达”证明的候选可以使用；不得把全局 `allow_metered` 打开。
+3. Android ↔ macOS、Android ↔ Android 分别验证两个文件发送方向。
+4. 两个 Halo 端点即使同时有移动数据或其他默认路由，文件包也只能走热点局域网接口。
+5. 关闭热点后旧 QUIC 会话立即结束；不得迁移到蜂窝、VPN、默认 Wi-Fi 或公网。
+6. 仅剩蜂窝网络时，两端显示“无可用传输路径”，不发送控制消息、文件元数据或内容。
+
+当前不把“其中一台 Android 既创建 `LocalOnlyHotspot` 又作为 Halo 传输端点”列为已实现
+场景。公开 API 没有向宿主返回可供 `Network.bindSocket` 使用的精确 SoftAP `Network`；
+在解决并验证该所有权证明前，不得用 wildcard socket 或默认路由绕过。端点宿主模式是
+独立的后续门槛，不影响两端加入外部热点的验收。
 
 这部分只定义发现互通标准；配对真机标准见
 [`android-macos-pairing.md`](android-macos-pairing.md)。配对通过后，可继续执行文件传输

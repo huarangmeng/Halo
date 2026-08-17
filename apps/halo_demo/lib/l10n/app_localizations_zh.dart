@@ -62,6 +62,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get stop => '停止';
 
   @override
+  String get localHotspotJoin => '加入本地热点';
+
+  @override
+  String get localHotspotUseCurrentWifi => '将当前 Wi-Fi 用作本地热点';
+
+  @override
+  String get localHotspotLeave => '离开热点';
+
+  @override
+  String get localHotspotStopUsingCurrentWifi => '停止热点通道';
+
+  @override
   String nearbyDevices(int count) {
     return '附近设备（$count）';
   }
@@ -196,6 +208,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get capabilityLocalNetwork => '局域网';
 
   @override
+  String get capabilityLocalHotspot => '仅本地热点';
+
+  @override
   String get capabilityApplePeerToPeer => 'Apple 点对点 Wi-Fi';
 
   @override
@@ -271,6 +286,39 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get capabilityLocalNetworkRestartRequired =>
       '局域网已发生变化；请重启发现以绑定新的 QUIC Socket。';
+
+  @override
+  String get capabilityLocalHotspotNotJoined => '尚未加入用户授权的本地热点。';
+
+  @override
+  String get capabilityLocalHotspotJoining => '正在等待 Android 加入所选的仅本地热点。';
+
+  @override
+  String get capabilityLocalHotspotJoined => '已为下一次发现会话固定用户授权的仅本地热点。';
+
+  @override
+  String get capabilityLocalHotspotPermissionDenied => '加入本地热点需要附近 Wi-Fi 设备权限。';
+
+  @override
+  String get capabilityLocalHotspotStopDiscoveryFirst => '更改本地热点前请先停止发现。';
+
+  @override
+  String get capabilityLocalHotspotLost => '本地热点已断开；旧 QUIC 路径不能迁移。';
+
+  @override
+  String get capabilityLocalHotspotInvalidCredentials => '热点名称或 WPA2 密码无效。';
+
+  @override
+  String get capabilityLocalHotspotUnavailable => 'Android 无法加入指定的仅本地热点。';
+
+  @override
+  String get capabilityLocalHotspotFailed => '本地热点设置已安全失败。';
+
+  @override
+  String get capabilityLocalHotspotBindingFailed => '已加入热点，但无法安全固定其 Socket。';
+
+  @override
+  String get capabilityLocalHotspotCancelled => '已取消本地热点设置。';
 
   @override
   String get capabilityEthernetConnected => '当前通过以太网连接局域网。';

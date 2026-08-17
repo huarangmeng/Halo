@@ -6,13 +6,24 @@ import java.net.DatagramSocket
 /** Transfers an already-bound UDP socket directly from Android to Rust. */
 internal object HaloNativeSocketBridge {
     fun registerBoundSocket(socket: DatagramSocket): Boolean {
+        return transferSocket(socket, ::nativeRegisterBoundSocket)
+    }
+
+    fun registerUserApprovedHotspotSocket(socket: DatagramSocket): Boolean {
+        return transferSocket(socket, ::nativeRegisterUserApprovedHotspotSocket)
+    }
+
+    private fun transferSocket(
+        socket: DatagramSocket,
+        register: (Int) -> Int,
+    ): Boolean {
         val descriptor = try {
             ParcelFileDescriptor.fromDatagramSocket(socket).detachFd()
         } catch (_: RuntimeException) {
             return false
         }
         return try {
-            nativeRegisterBoundSocket(descriptor) == STATUS_OK
+            register(descriptor) == STATUS_OK
         } catch (_: Throwable) {
             // The JNI function did not resolve, so native code could not have
             // accepted ownership of the detached descriptor.
@@ -28,6 +39,8 @@ internal object HaloNativeSocketBridge {
     }
 
     private external fun nativeRegisterBoundSocket(fileDescriptor: Int): Int
+
+    private external fun nativeRegisterUserApprovedHotspotSocket(fileDescriptor: Int): Int
 
     private external fun nativeDisableLan(): Int
 

@@ -2,9 +2,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Rust SDK。它的第一个
-参考应用通过 Flutter UI，在 Android、iOS、Windows 和 macOS 设备之间直接传输
-文件。
+Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Rust SDK。当前首个交付目标
+通过 Flutter UI 完成 Android ↔ macOS 与 Android ↔ Android 文件传输，并把 macOS ↔
+macOS 作为同实现回归路径。iPhone/iPad 和 Windows 仍是协议目标，但其剩余产品能力
+统一后补。
 
 > 项目状态：早期实现阶段。仓库现在已有 Android、iOS 和 macOS 共用的 Flutter 发现
 > Demo，底层使用 Rust 发现核心与极薄的原生 BLE 驱动。Android ↔ macOS 已完成一次
@@ -15,16 +16,20 @@ Halo 是一个开放、无需账号、跨平台的近场设备连接协议与 Ru
 > 验证。LAN 配对后
 > QUIC 会话保留和 Rust 单文件校验/安全落盘核心已经实现；共享 Demo 也已接入
 > Android/macOS 原生文件选择、接收确认和取消流程，文件字节不经过 Dart。通用数据
-> 通道 Broker 已实现非计费本地路径、接口绑定声明、有界系统提示和认证后胜出策略。
-> Android 现在由 Kotlin 将固定到指定 OS Network 的 UDP socket 直接移交 Rust；没有
-> 合格非计费 LAN 时只监听 loopback。iOS/macOS 现在使用 `IP_BOUND_IF` 将 IPv4 UDP
-> socket 固定到 Network.framework 选出的合格 Wi-Fi/以太网接口，再直接移交 Rust；
-> Windows LAN 精确绑定与 Direct/Aware 适配器仍待完成。主机回环与主机构建已通过，
-> 但 Android ↔ macOS 真机文件传输仍未验证。
+> 通道 Broker 已把自动非计费共享 LAN 与低优先级、用户明确授权的本地热点拆成两类，
+> 并实现接口绑定、有界系统提示和认证后胜出策略。Android 可通过
+> `WifiNetworkSpecifier` 加入 WPA2 仅本地热点，将 UDP socket 固定到该 OS `Network`
+> 后直接移交 Rust，热点凭据不经过 Dart。macOS 可由用户明确授权当前 Wi-Fi 为热点
+> 通道，并继续用 `IP_BOUND_IF` 精确绑定；普通 Wi-Fi/以太网默认仍要求非昂贵、非受限。
+> 端点自身创建热点尚不宣称支持，因为宿主侧精确路径契约仍缺少真机证据。
+> Windows LAN 精确绑定与 Direct/Aware 适配器仍待完成，且不属于当前 Android ↔
+> macOS 里程碑。主机回环与主机构建已通过，
+> 但 Android ↔ macOS 与 Android ↔ Android 真机文件传输仍未验证。
 
 Halo 不是 AirDrop 的实现，也不会尝试逆向 Apple 的私有技术栈。近期目标更小，也
-更容易验证：当两台设备都打开 Halo，并处于彼此可达的同一局域网时，它们能够互相
-发现、建立信任，并在不依赖账号和云端中转的情况下安全地传输文件。
+更容易验证：当 Android 设备与 Mac 都打开 Halo，并处于彼此可达的同一局域网时，
+它们能够互相发现、建立信任，并在不依赖账号和云端中转的情况下安全传输文件。没有
+共同网络时可以引导用户准备热点，但绝不回退到蜂窝网络或公网。
 
 本文是默认英文 [README](README.md) 的简体中文版本。若两个版本出现含义差异，
 以英文版和协议规范为准。
@@ -54,8 +59,8 @@ Flutter Demo / 第三方应用
 
 - **以协议保证跨平台。** 各平台共享同一套协议行为；平台限制需要明确暴露，而不是
   被乐观的 UI 隐藏。
-- **本地优先。** 数据应尽可能在局域网内直接传输。MVP 不依赖账号、中央设备目录、
-  数据分析或云端中继。
+- **仅限本地。** 数据只通过共同 LAN 或用户准备的热点直接传输。MVP 不依赖账号、
+  公网会合、NAT 穿透、数据分析、蜂窝数据通道或云端中继。
 - **先确认，再信任。** 发现附近设备不代表获得授权。新设备必须经过用户接受和
   密码学验证。
 - **默认保护隐私。** 传输全程加密，尽量减少广播信息，绝不隐式上传用户内容。
@@ -79,7 +84,8 @@ Flutter Demo / 第三方应用
 
 ### MVP 包含
 
-- Android、iOS、Windows 和 macOS Demo 应用
+- Android 与 macOS Demo 是当前里程碑，覆盖 Android ↔ macOS 和 Android ↔ Android；
+  iPhone/iPad 和 Windows 是后续计划目标
 - 并行运行 BLE 会合、mDNS/DNS-SD、IPv4/IPv6 Presence 组播、子网定向广播和
   已配对地址直探
 - 基于 QUIC 的端到端直接加密传输
@@ -99,7 +105,8 @@ Flutter Demo / 第三方应用
 - 文件夹同步、剪贴板同步、投屏、键鼠共享或摄像头串流
 - 类似 `100 MB/s` 的通用吞吐量承诺
 
-这些排除项只是开发顺序上的选择，并不表示它们在所有平台上都一定可行。
+延后平台和一般功能属于开发顺序选择；蜂窝、公网、NAT 穿透和中继传输则是明确产品
+边界，除非未来有新的 ADR 取代当前决定。
 
 当前实验版 Android Demo 会在用户明确开始发现后，通过可见的前台服务通知维持后台
 发现；macOS Demo 会在应用进程仍运行时继续发现。这不保证能够跨越强制停止、进程
@@ -107,12 +114,12 @@ Flutter Demo / 第三方应用
 
 ## 平台预期
 
-| 平台 | 发现方式 | 四端共同基线 | 点对点数据通道计划 |
-| --- | --- | --- | --- |
-| Android | BLE + 并行 LAN Provider | 局域网 QUIC | Wi-Fi Direct、Wi-Fi Aware |
-| iOS/iPadOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | Apple 点对点 Wi-Fi；受支持的 iOS/iPadOS 26 设备使用 Wi-Fi Aware |
-| Windows | WinRT BLE + 并行 LAN Provider | 局域网 QUIC | Wi-Fi Direct |
-| macOS | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | Apple 点对点 Wi-Fi |
+| 平台 | 交付优先级 | 发现方式 | 共同基线 | 点对点数据通道计划 |
+| --- | --- | --- | --- | --- |
+| Android | 当前目标 | BLE + 并行 LAN Provider | LAN/热点 QUIC | Wi-Fi Direct、Wi-Fi Aware 后补 |
+| macOS | 当前目标 | CoreBluetooth + Bonjour + LAN Presence | LAN/热点 QUIC | Apple 点对点 Wi-Fi 后补 |
+| iPhone/iPad | 延后 | CoreBluetooth + Bonjour + LAN Presence | 局域网 QUIC | Apple 点对点 Wi-Fi；受支持硬件的 Wi-Fi Aware |
+| Windows | 延后 | WinRT BLE + 并行 LAN Provider | 局域网 QUIC | Wi-Fi Direct |
 
 BLE 会合属于首批发现能力，在权限和硬件允许时与 LAN Provider 并行运行。它只广播
 最小化、可轮换的 Presence 信息，不负责传输文件，也不能单独证明设备身份。某个
@@ -120,13 +127,15 @@ Provider 不可用时必须明确报告原因，其他 Provider 继续运行。
 
 Apple 点对点 Wi-Fi、Wi-Fi Direct 和 Wi-Fi Aware 是正式的数据通道 Provider，
 不是三套不同的文件协议。它们都只负责在同一套认证 QUIC 与传输协议下方建立合格的
-本地链路。每个平台组合在通过真机验收前仍标记为 `planned`；蜂窝网络和互联网不会
-成为隐式回退。完整设计见
+本地链路。每个平台组合在通过真机验收前仍标记为 `planned`。当前产品顺序固定为共同
+LAN 优先、用户准备的热点其次；蜂窝网络、公网和中继路径直接禁止，不作为回退。完整
+设计见
 [`docs/architecture/data-channels.md`](docs/architecture/data-channels.md) 与
-[`ADR 0007`](docs/adr/0007-multi-bearer-data-channels.md)。
+[`ADR 0007`](docs/adr/0007-multi-bearer-data-channels.md)，当前平台范围见
+[`ADR 0010`](docs/adr/0010-android-macos-first-delivery.md)。
 
 在协议工作区稳定后，我们希望把 Linux 作为 Rust 核心和 CLI 的验证目标，但第一阶段
-的四端里程碑不包含 Linux Flutter Demo。
+的 Android/macOS 当前里程碑不包含 Linux Flutter Demo。
 
 ## 架构
 
@@ -302,20 +311,26 @@ P-256、HKDF-SHA-256 和 `flutter_rust_bridge`（生成 Dart/Rust 绑定）。BL
 
 ## 交付计划
 
+当前计划覆盖 Android ↔ macOS 与 Android ↔ Android，并把 macOS ↔ macOS 作为回归
+路径。原四平台并行顺序已由
+[`ADR 0010`](docs/adr/0010-android-macos-first-delivery.md) 取代；公共协议继续保持可移植，
+iPhone/iPad 与 Windows 产品接线后补。
+
 ### Phase 0 — 确立契约与风险
 
 - 编写协议帧、状态机草案和兼容性策略
 - 编写威胁模型和配对 ADR
-- 在四个平台验证 Rust 到 Flutter 的调用链路
+- 在 Android 与 macOS 验证 Rust 到 Flutter 的调用链路，并为后补的 iPhone/iPad、
+  Windows 保持契约可移植
 - 在真实设备上验证 Bonjour/mDNS 可见性和 QUIC 连接
 - 建立 CI、可复现工具链、许可证策略和测试夹具
 
-退出条件：四个平台的应用都能调用同一个 Rust 函数、报告平台能力，并且至少能在一个
-有代表性的局域网环境中交换经过认证的 `hello` 消息。
+退出条件：Android 与 macOS 应用能调用同一个 Rust SDK、报告平台能力，并在一个有
+代表性的局域网环境中交换经过认证的 `hello` 消息。
 
 ### Phase 1 — 端到端垂直切片
 
-- 完成 macOS ↔ Windows 发现和单文件传输
+- 完成 Android ↔ macOS 与 Android ↔ Android 双向发现和单文件传输
 - 完成首次连接时的明确身份验证
 - 支持流式 I/O、取消、进度、摘要校验和安全暂存
 - 建立协议黄金测试向量和故障注入集成测试
@@ -325,13 +340,14 @@ P-256、HKDF-SHA-256 和 `flutter_rust_bridge`（生成 Dart/Rust 绑定）。BL
 
 ### Phase 2 — 移动端前台支持
 
-- 实现 Android 和 iOS 适配器、权限引导与生命周期处理
-- 建立桌面端 ↔ 移动端、移动端 ↔ 移动端互操作矩阵
+- 完善 Android 与 macOS 的权限引导、生命周期处理和精确路径绑定
+- 建立共同 Wi-Fi 与用户引导热点的互操作矩阵
 - 支持多文件请求、保存策略、磁盘空间错误和重试
 - 在适用平台生成经过签名、公证的开发产物
 
-退出条件：核心前台流程在受支持版本的 Android、iOS、Windows 和 macOS 真机上
-全部通过。
+退出条件：核心前台流程在 Android ↔ macOS 与 Android ↔ Android 真机组合间双向
+通过，先验证共同 Wi-Fi，再验证用户准备的热点；macOS ↔ macOS 保持回归通过。只有
+蜂窝网络时必须显示无可用传输路径。
 
 ### Phase 3 — 可恢复传输与 SDK 预览版
 
@@ -351,16 +367,19 @@ P-256、HKDF-SHA-256 和 `flutter_rust_bridge`（生成 Dart/Rust 绑定）。BL
 - 实现 Wi-Fi Direct Provider，并完成 Android ↔ Windows 互通矩阵
 - 为受支持的 Android 与 iOS/iPadOS 设备实现 Wi-Fi Aware Provider
 - 完成有界通道竞速、明确的能力 UI、资源释放与禁止蜂窝回退测试
+- 后补 iPhone/iPad、Windows 产品接线与真机矩阵
 - 将剪贴板或小消息作为第二个协议消费者
 
-这些 Provider 已纳入 Halo 的分阶段数据通道计划，但在通过文档规定的真机门槛前
-保持 `planned`。互联网会合、NAT 穿透、云端中继和用户账号仍是独立的非 MVP 研究项。
+这些 Provider 属于后续工作，不阻塞 Android ↔ macOS 里程碑；在通过文档规定的真机
+门槛前保持 `planned`。互联网会合、NAT 穿透、云端中继、蜂窝传输和用户账号均不支持，
+也不在当前排期内。
 
 ## 成功标准
 
 第一个公开预览版应满足以下可衡量标准：
 
-- 四个平台的 Demo 使用同一套协议实现互传文件。
+- Android 与 macOS Demo 使用同一套协议完成 Android ↔ macOS 与 Android ↔ Android
+  双向文件传输；macOS ↔ macOS 保持回归通过，后续平台必须复用该线协议。
 - 所有数据在传输过程中加密，所有完成的文件均经过校验。
 - 首次连接时的冒充行为可以通过明确的验证仪式被发现，并记录在威胁模型中。
 - 取消操作不会留下最终文件；中断后只保留有大小限制、私有且可恢复的状态。

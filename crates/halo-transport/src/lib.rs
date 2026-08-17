@@ -16,6 +16,7 @@ pub use data_channel::{
     DataChannelCapability, DataChannelCapabilityState, DataChannelCost, DataChannelError,
     DataChannelKind, DataChannelPathClass, DataChannelPeer, DataChannelPolicy, DataChannelProvider,
     EstablishedDataChannel, EstablishedDataChannelResult, EstablishedPathProperties,
+    LocalNetworkScope,
 };
 pub use data_io::{DataIo, DataIoError};
 pub use frame_io::{ControlIo, FrameIoError, receive_message, send_message};

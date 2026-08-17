@@ -10,25 +10,50 @@ public enum HaloAppleBoundLanSocketError: Error, Equatable {
     case addressBindingFailed
 }
 
+public enum HaloAppleLocalNetworkScope: Equatable {
+    case shared
+    case userApprovedHotspot
+}
+
 /// Creates a UDP socket whose packets cannot leave the selected Apple network
 /// interface. The caller owns the returned descriptor until it explicitly
 /// transfers that ownership to Rust.
 public enum HaloAppleBoundLanSocket {
-    public static func eligibleInterface(on path: NWPath) -> NWInterface? {
+    public static func eligibleInterface(
+        on path: NWPath,
+        scope: HaloAppleLocalNetworkScope = .shared
+    ) -> NWInterface? {
         guard path.status == .satisfied,
               path.supportsIPv4,
-              !path.isExpensive,
-              !path.isConstrained
+              allows(
+                  isExpensive: path.isExpensive,
+                  isConstrained: path.isConstrained,
+                  scope: scope
+              )
         else {
             return nil
         }
         return path.availableInterfaces.first { interface in
-            switch interface.type {
-            case .wifi, .wiredEthernet:
-                path.usesInterfaceType(interface.type)
-            default:
-                false
+            guard path.usesInterfaceType(interface.type) else { return false }
+            return switch scope {
+            case .shared:
+                interface.type == .wifi || interface.type == .wiredEthernet
+            case .userApprovedHotspot:
+                interface.type == .wifi
             }
+        }
+    }
+
+    public static func allows(
+        isExpensive: Bool,
+        isConstrained: Bool,
+        scope: HaloAppleLocalNetworkScope
+    ) -> Bool {
+        switch scope {
+        case .shared:
+            !isExpensive && !isConstrained
+        case .userApprovedHotspot:
+            true
         }
     }
 
