@@ -16,8 +16,9 @@ pub use discovery::{
 pub use pairing::{
     AuthenticatedSessionInfo, PairingConfig, PairingError, PairingEvent, PairingEventKind,
     PairingPolicy, PairingService, PairingStartup, PlatformPairingChannelState,
-    PlatformPairingRole, PlatformTlsIdentity, create_platform_tls_identity,
+    PlatformPairingRole, PlatformTlsIdentity, RememberedPeerInfo, create_platform_tls_identity,
 };
 pub use transfer::{
-    TransferDirection, TransferEvent, TransferEventKind, TransferPolicy, TransferServiceError,
+    TransferDirection, TransferEvent, TransferEventKind, TransferFileSource, TransferPolicy,
+    TransferServiceError,
 };

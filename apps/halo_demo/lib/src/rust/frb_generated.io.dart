@@ -29,6 +29,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
+
+  @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
@@ -72,16 +75,28 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   List<PairingEvent> dco_decode_list_pairing_event(dynamic raw);
 
   @protected
+  Uint64List dco_decode_list_prim_u_64_strict(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<RememberedPeerInfo> dco_decode_list_remembered_peer_info(dynamic raw);
+
+  @protected
   List<TransferEvent> dco_decode_list_transfer_event(dynamic raw);
 
   @protected
+  List<TransferFileSource> dco_decode_list_transfer_file_source(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
@@ -113,6 +128,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   PlatformTlsIdentity dco_decode_platform_tls_identity(dynamic raw);
 
   @protected
+  RememberedPeerInfo dco_decode_remembered_peer_info(dynamic raw);
+
+  @protected
   TransferDirection dco_decode_transfer_direction(dynamic raw);
 
   @protected
@@ -120,6 +138,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   TransferEventKind dco_decode_transfer_event_kind(dynamic raw);
+
+  @protected
+  TransferFileSource dco_decode_transfer_file_source(dynamic raw);
 
   @protected
   int dco_decode_u_16(dynamic raw);
@@ -146,6 +167,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
@@ -203,10 +227,18 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  Uint64List sse_decode_list_prim_u_64_strict(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<RememberedPeerInfo> sse_decode_list_remembered_peer_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<TransferEvent> sse_decode_list_transfer_event(
@@ -214,7 +246,15 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  List<TransferFileSource> sse_decode_list_transfer_file_source(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
@@ -252,6 +292,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  RememberedPeerInfo sse_decode_remembered_peer_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   TransferDirection sse_decode_transfer_direction(SseDeserializer deserializer);
 
   @protected
@@ -259,6 +304,11 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   TransferEventKind sse_decode_transfer_event_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransferFileSource sse_decode_transfer_file_source(
     SseDeserializer deserializer,
   );
 
@@ -288,6 +338,9 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
@@ -353,11 +406,23 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  void sse_encode_list_prim_u_64_strict(
+    Uint64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_remembered_peer_info(
+    List<RememberedPeerInfo> self,
     SseSerializer serializer,
   );
 
@@ -368,7 +433,16 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  void sse_encode_list_transfer_file_source(
+    List<TransferFileSource> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
@@ -419,6 +493,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   );
 
   @protected
+  void sse_encode_remembered_peer_info(
+    RememberedPeerInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_transfer_direction(
     TransferDirection self,
     SseSerializer serializer,
@@ -430,6 +510,12 @@ abstract class HaloRustLibApiImplPlatform extends BaseApiImpl<HaloRustLibWire> {
   @protected
   void sse_encode_transfer_event_kind(
     TransferEventKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transfer_file_source(
+    TransferFileSource self,
     SseSerializer serializer,
   );
 

@@ -654,7 +654,8 @@ stopped
 - Rust 已把共享 LAN 与用户授权热点建模为不同作用域，前者自动路径只接受非计费网络，
   后者必须经过显式用户操作且优先级更低；Android 加入端使用
   `WifiNetworkSpecifier` 和精确 `Network.bindSocket`，macOS 使用当前 Wi-Fi 授权与
-  `IP_BOUND_IF`。两端加入外部热点的代码接线和主机构建已通过，仍待统一真机验证；
+  双栈 `IPV6_BOUND_IF`。QUIC 与已记住地址直探分别使用固定到同一网络/接口的 Socket；
+  两端加入外部热点的代码接线和主机构建已通过，仍待统一真机验证；
 - `halo-ffi` 已接入 Rust DiscoveryManager，BLE 原始字节必须经过 Rust codec 和聚合器，
   相关跨边界自动测试已经通过；
 - Android ↔ macOS 已在真机上完成双向发现验证；UI 可显示完整 Presence ID、设备类型、

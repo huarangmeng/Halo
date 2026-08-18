@@ -20,6 +20,7 @@ use halo_transport::{
     PlatformControlIo, QuicConnection, QuicEndpoint, pair_as_initiator, pair_as_responder,
     platform_control_channel,
 };
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore, oneshot},
@@ -27,7 +28,9 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::transfer::{ReceiveTransferDecision, TransferCoordinator, TransferPolicy};
+use crate::transfer::{
+    ReceiveTransferDecision, TransferCoordinator, TransferFileSource, TransferPolicy,
+};
 use crate::{TransferEvent, TransferServiceError};
 
 const EVENT_LIMIT: usize = 128;
@@ -79,6 +82,7 @@ impl PairingPolicy {
 pub struct PairingConfig {
     identity_blob: Option<Vec<u8>>,
     trust_store_directory: PathBuf,
+    transfer_state_directory: PathBuf,
     bind_address: SocketAddr,
     bound_socket: Option<(UdpSocket, EstablishedPathProperties)>,
     pairing_policy: PairingPolicy,
@@ -88,9 +92,12 @@ pub struct PairingConfig {
 impl PairingConfig {
     #[must_use]
     pub fn new(trust_store_directory: impl Into<PathBuf>) -> Self {
+        let trust_store_directory = trust_store_directory.into();
+        let transfer_state_directory = trust_store_directory.join("transfer-resume");
         Self {
             identity_blob: None,
-            trust_store_directory: trust_store_directory.into(),
+            trust_store_directory,
+            transfer_state_directory,
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             bound_socket: None,
             pairing_policy: PairingPolicy::default(),
@@ -102,6 +109,12 @@ impl PairingConfig {
     #[must_use]
     pub fn with_identity_blob(mut self, identity_blob: Vec<u8>) -> Self {
         self.identity_blob = Some(identity_blob);
+        self
+    }
+
+    #[must_use]
+    pub fn with_transfer_state_directory(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.transfer_state_directory = directory.into();
         self
     }
 
@@ -213,6 +226,7 @@ pub enum PairingEventKind {
     Cancelled,
     Failed,
     Disconnected,
+    Revoked,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -259,12 +273,24 @@ impl PairingService {
         let PairingConfig {
             identity_blob,
             trust_store_directory,
+            transfer_state_directory,
             bind_address,
             bound_socket,
             pairing_policy,
             transfer_policy,
         } = config;
         let pairing_policy = pairing_policy.validate()?;
+        tokio::fs::create_dir_all(&transfer_state_directory)
+            .await
+            .map_err(|_| PairingError::TransferState)?;
+        let transfer_state_metadata = tokio::fs::symlink_metadata(&transfer_state_directory)
+            .await
+            .map_err(|_| PairingError::TransferState)?;
+        if !transfer_state_metadata.file_type().is_dir()
+            || transfer_state_metadata.file_type().is_symlink()
+        {
+            return Err(PairingError::TransferState);
+        }
         let trust_store = Arc::new(FileTrustStore::new(trust_store_directory)?);
         let (identity, new_identity_blob) = match identity_blob {
             Some(bytes) => {
@@ -312,7 +338,7 @@ impl PairingService {
             identity: Arc::new(identity),
             trust_store,
             shared: Arc::new(
-                PairingShared::new(transfer_policy, pairing_policy)
+                PairingShared::new(transfer_policy, pairing_policy, transfer_state_directory)
                     .map_err(|_| PairingError::InvalidTransferPolicy)?,
             ),
             cancellation: CancellationToken::new(),
@@ -472,7 +498,101 @@ impl PairingService {
         self.shared.authenticated_sessions()
     }
 
-    /// Starts one single-file transfer on a retained authenticated LAN QUIC session.
+    pub async fn remembered_endpoint_addresses(&self) -> Result<Vec<IpAddr>, PairingError> {
+        self.trust_store
+            .remembered_endpoints(8)
+            .await
+            .map(|endpoints| {
+                endpoints
+                    .into_iter()
+                    .map(|endpoint| endpoint.address)
+                    .collect()
+            })
+            .map_err(Into::into)
+    }
+
+    pub async fn remembered_peers(&self) -> Result<Vec<RememberedPeerInfo>, PairingError> {
+        let peers = self.trust_store.trusted_peers(128).await?;
+        let sessions = self
+            .shared
+            .authenticated_sessions
+            .lock()
+            .map_err(|_| PairingError::InternalState)?;
+        Ok(peers
+            .into_iter()
+            .map(|peer| {
+                let peer_id = peer.peer_id();
+                RememberedPeerInfo {
+                    handle: peer_handle(peer_id),
+                    fingerprint: peer_fingerprint(peer_id),
+                    active_session_id: sessions.iter().find_map(|(session_id, session)| {
+                        (session.peer_id == peer_id).then_some(*session_id)
+                    }),
+                }
+            })
+            .collect())
+    }
+
+    pub async fn revoke_authenticated_peer(&self, session_id: u64) -> Result<(), PairingError> {
+        let peer_id = {
+            let sessions = self
+                .shared
+                .authenticated_sessions
+                .lock()
+                .map_err(|_| PairingError::InternalState)?;
+            let session = sessions
+                .get(&session_id)
+                .ok_or(PairingError::AuthenticatedSessionNotFound)?;
+            session.peer_id
+        };
+        self.revoke_peer_id(peer_id).await
+    }
+
+    pub async fn revoke_remembered_peer(&self, handle: &str) -> Result<(), PairingError> {
+        let peer_id = parse_peer_handle(handle).ok_or(PairingError::InvalidPeerHandle)?;
+        self.revoke_peer_id(peer_id).await
+    }
+
+    async fn revoke_peer_id(&self, peer_id: PeerId) -> Result<(), PairingError> {
+        let active = {
+            let sessions = self
+                .shared
+                .authenticated_sessions
+                .lock()
+                .map_err(|_| PairingError::InternalState)?;
+            sessions
+                .iter()
+                .filter(|(_, session)| session.peer_id == peer_id)
+                .map(|(session_id, session)| {
+                    (
+                        *session_id,
+                        session.connection.clone(),
+                        session.peer_reference.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        self.trust_store.revoke_peer(peer_id).await?;
+        for (session_id, connection, _) in &active {
+            self.shared.remove_authenticated_session(*session_id, false);
+            connection.close();
+        }
+        let mut event = new_event(
+            PairingEventKind::Revoked,
+            active
+                .first()
+                .and_then(|(_, _, reference)| reference.clone()),
+            Some(peer_fingerprint(peer_id)),
+            None,
+        );
+        event.authenticated_session_id = active.first().map(|(session_id, _, _)| *session_id);
+        event.detail = Some("trust_revoked".to_owned());
+        self.shared.emit(event)
+    }
+
+    /// Starts one transfer on a retained authenticated LAN QUIC session.
+    ///
+    /// A single file is represented as a one-entry resumable manifest.
     pub async fn send_file(
         &self,
         authenticated_session_id: u64,
@@ -482,6 +602,25 @@ impl PairingService {
         self.shared
             .transfers
             .send_file(authenticated_session_id, source_path, advertised_name)
+            .await
+    }
+
+    pub async fn send_files(
+        &self,
+        authenticated_session_id: u64,
+        sources: Vec<TransferFileSource>,
+    ) -> Result<String, TransferServiceError> {
+        self.shared
+            .transfers
+            .send_files(
+                authenticated_session_id,
+                sources
+                    .into_iter()
+                    .map(|source| {
+                        halo_transfer::BatchSource::new(source.source_path, source.advertised_name)
+                    })
+                    .collect(),
+            )
             .await
     }
 
@@ -499,18 +638,61 @@ impl PairingService {
         staging_directory: Option<PathBuf>,
         destination_directory: Option<PathBuf>,
     ) -> Result<(), TransferServiceError> {
+        self.respond_to_transfer_with_space(
+            request_id,
+            accepted,
+            staging_directory,
+            destination_directory,
+            None,
+        )
+    }
+
+    pub fn respond_to_transfer_with_space(
+        &self,
+        request_id: u64,
+        accepted: bool,
+        staging_directory: Option<PathBuf>,
+        destination_directory: Option<PathBuf>,
+        available_bytes: Option<u64>,
+    ) -> Result<(), TransferServiceError> {
         self.shared.transfers.respond(
             request_id,
             ReceiveTransferDecision {
                 accepted,
                 staging_directory,
                 destination_directory,
+                available_bytes,
             },
         )
     }
 
-    pub fn cancel_transfer(&self, transfer_id: &str) -> Result<(), TransferServiceError> {
-        self.shared.transfers.cancel(transfer_id)
+    pub fn pause_transfer(&self, transfer_id: &str) -> Result<(), TransferServiceError> {
+        self.shared.transfers.pause(transfer_id)
+    }
+
+    pub async fn retry_transfer(
+        &self,
+        authenticated_session_id: u64,
+        transfer_id: &str,
+    ) -> Result<String, TransferServiceError> {
+        self.shared
+            .transfers
+            .retry(authenticated_session_id, transfer_id)
+            .await
+    }
+
+    pub async fn cancel_transfer(&self, transfer_id: &str) -> Result<(), TransferServiceError> {
+        self.shared.transfers.cancel(transfer_id).await
+    }
+
+    pub async fn take_finished_transfer_sources(
+        &self,
+        transfer_id: &str,
+    ) -> Result<Vec<PathBuf>, TransferServiceError> {
+        self.shared
+            .transfers
+            .take_finished_sources(transfer_id)
+            .await
     }
 
     pub fn events_after(&self, event_id: u64) -> Result<Vec<PairingEvent>, PairingError> {
@@ -612,10 +794,19 @@ pub struct AuthenticatedSessionInfo {
     pub peer_reference: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RememberedPeerInfo {
+    /// Opaque command handle. Applications must not display or log it.
+    pub handle: String,
+    pub fingerprint: String,
+    pub active_session_id: Option<u64>,
+}
+
 impl PairingShared {
     fn new(
         transfer_policy: TransferPolicy,
         pairing_policy: PairingPolicy,
+        transfer_state_directory: PathBuf,
     ) -> Result<Self, TransferServiceError> {
         Ok(Self {
             next_event_id: AtomicU64::new(0),
@@ -626,7 +817,10 @@ impl PairingShared {
             platform_channels: Mutex::new(HashMap::new()),
             next_authenticated_session_id: AtomicU64::new(0),
             authenticated_sessions: Mutex::new(HashMap::new()),
-            transfers: Arc::new(TransferCoordinator::new(transfer_policy)?),
+            transfers: Arc::new(TransferCoordinator::new(
+                transfer_policy,
+                transfer_state_directory,
+            )?),
             connection_slots: Arc::new(Semaphore::new(MAX_PAIRING_CONNECTIONS)),
             active_peer_attempts: Mutex::new(HashSet::new()),
             recent_peer_attempts: Mutex::new(HashMap::new()),
@@ -783,6 +977,7 @@ impl PairingShared {
         self: &Arc<Self>,
         connection: QuicConnection,
         peer_id: PeerId,
+        peer_binding: [u8; 32],
         peer_reference: Option<String>,
     ) -> Result<u64, PairingError> {
         let mut sessions = self
@@ -823,7 +1018,7 @@ impl PairingShared {
         drop(sessions);
         if self
             .transfers
-            .attach_session(session_id, connection.clone())
+            .attach_session(session_id, connection.clone(), peer_binding)
             .is_err()
         {
             if let Ok(mut sessions) = self.authenticated_sessions.lock() {
@@ -1215,9 +1410,11 @@ fn retain_quic_session_or_emit_failure(
     match result {
         Ok(outcome) => {
             let peer_id = outcome.peer.peer_id();
+            let peer_binding = Sha256::digest(outcome.peer.identity_key.as_bytes()).into();
             match shared.insert_authenticated_session(
                 connection.clone(),
                 peer_id,
+                peer_binding,
                 reference.clone(),
             ) {
                 Ok(session_id) => {
@@ -1320,6 +1517,26 @@ fn peer_fingerprint(peer_id: PeerId) -> String {
         .join(":")
 }
 
+fn peer_handle(peer_id: PeerId) -> String {
+    peer_id
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn parse_peer_handle(value: &str) -> Option<PeerId> {
+    if value.len() != 32 || !value.is_ascii() {
+        return None;
+    }
+    let mut bytes = [0_u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let offset = index * 2;
+        *byte = u8::from_str_radix(&value[offset..offset + 2], 16).ok()?;
+    }
+    Some(PeerId::from_bytes(bytes))
+}
+
 fn connect_error_category(kind: ConnectErrorKind) -> &'static str {
     match kind {
         ConnectErrorKind::InvalidConfiguration => "connect_configuration",
@@ -1360,6 +1577,10 @@ pub enum PairingError {
     RateLimited,
     #[error("pairing request is no longer pending")]
     RequestNotPending,
+    #[error("authenticated session does not exist")]
+    AuthenticatedSessionNotFound,
+    #[error("remembered peer handle is invalid")]
+    InvalidPeerHandle,
     #[error("platform pairing channel does not exist")]
     PlatformChannelNotFound,
     #[error("platform pairing channel is backpressured")]
@@ -1376,6 +1597,8 @@ pub enum PairingError {
     Endpoint,
     #[error("transfer policy configuration is invalid")]
     InvalidTransferPolicy,
+    #[error("transfer resume storage is unavailable")]
+    TransferState,
     #[error("pairing policy configuration is invalid")]
     InvalidPairingPolicy,
     #[error("pre-bound QUIC socket does not satisfy the nearby path policy")]
@@ -1915,13 +2138,14 @@ mod tests {
         assert_eq!(offer.transfer_id, transfer_id);
         receiver
             .service
-            .respond_to_transfer(
+            .respond_to_transfer_with_space(
                 offer
                     .request_id
                     .unwrap_or_else(|| panic!("transfer request id")),
                 true,
                 Some(staging_directory.clone()),
                 Some(destination_directory.clone()),
+                Some(u64::MAX),
             )
             .unwrap_or_else(|error| panic!("accept transfer: {error}"));
         let received = wait_for_transfer(&receiver.service, |event| {

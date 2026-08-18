@@ -21,7 +21,8 @@ use halo_protocol::{DATA_RECORD_HEADER_LEN, HEADER_LEN, MAX_DATA_RECORD_LEN, MAX
 
 use crate::{
     ConnectAttemptError, ConnectErrorKind, ControlIo, DataIo, DataIoError, FrameIoError,
-    SecureConnector, data_io::data_record_length,
+    SecureConnector,
+    data_io::{data_record_header_length, data_record_length},
 };
 
 const ALPN: &[u8] = b"halo-pairing/1";
@@ -332,10 +333,14 @@ impl DataIo for QuicDataIo {
     }
 
     async fn send_record(&mut self, record: &[u8]) -> Result<(), DataIoError> {
-        if record.len() < DATA_RECORD_HEADER_LEN || record.len() > MAX_DATA_RECORD_LEN {
+        if record.len() < 4 || record.len() > MAX_DATA_RECORD_LEN {
             return Err(DataIoError::RecordTooLarge(record.len()));
         }
-        let declared = data_record_length(&record[..DATA_RECORD_HEADER_LEN])?;
+        let header_length = data_record_header_length(&record[..4])?;
+        if record.len() < header_length {
+            return Err(DataIoError::Truncated);
+        }
+        let declared = data_record_length(&record[..header_length])?;
         if declared != record.len() {
             return Err(DataIoError::RecordTooLarge(record.len()));
         }
@@ -348,14 +353,19 @@ impl DataIo for QuicDataIo {
     async fn receive_record(&mut self) -> Result<Vec<u8>, DataIoError> {
         let mut header = [0_u8; DATA_RECORD_HEADER_LEN];
         self.receive
-            .read_exact(&mut header)
+            .read_exact(&mut header[..4])
+            .await
+            .map_err(|_| DataIoError::Truncated)?;
+        let header_length = data_record_header_length(&header[..4])?;
+        self.receive
+            .read_exact(&mut header[4..])
             .await
             .map_err(|_| DataIoError::Truncated)?;
         let record_length = data_record_length(&header)?;
         let mut record = vec![0_u8; record_length];
-        record[..DATA_RECORD_HEADER_LEN].copy_from_slice(&header);
+        record[..header_length].copy_from_slice(&header[..header_length]);
         self.receive
-            .read_exact(&mut record[DATA_RECORD_HEADER_LEN..])
+            .read_exact(&mut record[header_length..])
             .await
             .map_err(|_| DataIoError::Truncated)?;
         Ok(record)
@@ -515,8 +525,8 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use halo_protocol::{
-        Capabilities, ClientHello, IDENTITY_KEY_LEN, NONCE_LEN, PairingMessage, ProtocolRange,
-        SIGNATURE_LEN, TransferChunk,
+        BatchChunk, Capabilities, ClientHello, IDENTITY_KEY_LEN, NONCE_LEN, PairingMessage,
+        ProtocolRange, SIGNATURE_LEN,
     };
 
     use crate::{receive_message, send_message};
@@ -596,7 +606,7 @@ mod tests {
         let address = server
             .local_addr()
             .unwrap_or_else(|error| panic!("server address: {error}"));
-        let record = TransferChunk::new([1; 16], 0, [2; 32], vec![3; 1024])
+        let record = BatchChunk::new([1; 16], 0, 0, [2; 32], vec![3; 1024])
             .and_then(|chunk| chunk.encode())
             .unwrap_or_else(|error| panic!("record: {error}"));
         let expected_record = record.clone();

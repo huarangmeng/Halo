@@ -2,6 +2,7 @@ package org.halo.halo_demo
 
 import android.content.Context
 import android.net.Uri
+import android.os.StatFs
 import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileOutputStream
@@ -17,16 +18,41 @@ class HaloTransferStorage(private val context: Context) {
     private val received = File(root, RECEIVED_DIRECTORY)
     private val outgoing = File(root, OUTGOING_DIRECTORY)
 
-    fun directories(): Map<String, String> {
+    fun directories(): Map<String, Any> {
         ensureDirectories()
         return mapOf(
             "staging" to staging.absolutePath,
             "destination" to received.absolutePath,
+            "availableBytes" to StatFs(received.absolutePath).availableBytes,
         )
     }
 
     fun copySelectedFile(uri: Uri): Map<String, String> {
+        return copySelectedFiles(listOf(uri)).single()
+    }
+
+    fun copySelectedFiles(uris: List<Uri>): List<Map<String, String>> {
+        if (uris.isEmpty() || uris.size > MAX_FILE_COUNT) {
+            throw TransferStorageException("selected file count exceeds the transfer limit")
+        }
         ensureDirectories()
+        val copied = mutableListOf<Map<String, String>>()
+        var aggregateSize = 0L
+        try {
+            for (uri in uris) {
+                val selected = copyOne(uri, MAX_TRANSFER_SIZE - aggregateSize)
+                copied += selected
+                val size = File(selected.getValue("path")).length()
+                aggregateSize += size
+            }
+            return copied
+        } catch (error: Exception) {
+            copied.forEach { selected -> selected["path"]?.let(::discardOutgoing) }
+            throw error
+        }
+    }
+
+    private fun copyOne(uri: Uri, maximumBytes: Long): Map<String, String> {
         val displayName = displayName(uri) ?: "selected-file"
         val identifier = UUID.randomUUID().toString()
         val partial = File(outgoing, ".$identifier.part")
@@ -41,10 +67,10 @@ class HaloTransferStorage(private val context: Context) {
                     while (true) {
                         val count = source.read(buffer)
                         if (count < 0) break
-                        total += count
-                        if (total > MAX_FILE_SIZE) {
+                        if (count > maximumBytes - total) {
                             throw TransferStorageException("selected file exceeds the transfer limit")
                         }
+                        total += count
                         destination.write(buffer, 0, count)
                     }
                     destination.fd.sync()
@@ -100,7 +126,8 @@ class HaloTransferStorage(private val context: Context) {
         private const val RECEIVED_DIRECTORY = "received"
         private const val OUTGOING_DIRECTORY = "outgoing"
         private const val BUFFER_SIZE = 64 * 1024
-        private const val MAX_FILE_SIZE = 10L * 1024 * 1024 * 1024 * 1024
+        private const val MAX_FILE_COUNT = 8
+        private const val MAX_TRANSFER_SIZE = 10L * 1024 * 1024 * 1024
     }
 }
 

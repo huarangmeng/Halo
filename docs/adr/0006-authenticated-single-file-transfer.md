@@ -1,9 +1,12 @@
 # ADR 0006: Authenticated single-file transfer slice
 
-- Status: Accepted for experimental implementation
+- Status: Superseded by ADR 0011 before release
 - Date: 2026-07-29
 
 ## Context
+
+This ADR records the unpublished single-file proof slice. ADR 0011 replaced its
+wire format and product workflow before any Halo release.
 
 Halo can discover and pair Android and macOS peers, but the current pairing
 service closes the QUIC connection immediately after trust is established. File

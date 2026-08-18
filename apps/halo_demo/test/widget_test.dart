@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    show Uint64List;
 import 'package:halo_demo/discovery_controller.dart';
 import 'package:halo_demo/l10n/app_localizations.dart';
 import 'package:halo_demo/main.dart';
@@ -310,8 +312,13 @@ void main() {
           direction: TransferDirection.receiving,
           kind: TransferEventKind.offerReceived,
           fileName: 'photo.jpg',
+          fileNames: const ['photo.jpg'],
+          fileSizes: Uint64List.fromList(const [2048]),
           fileSize: BigInt.from(2048),
           transferredBytes: BigInt.zero,
+          completedFiles: 0,
+          currentFileIndex: 0,
+          resumable: true,
         ),
       ];
     addTearDown(controller.dispose);
@@ -330,5 +337,42 @@ void main() {
     expect(find.text('Accept file'), findsOneWidget);
     expect(find.text('Reject'), findsOneWidget);
     expect(find.textContaining('BLE carries no file bytes'), findsOneWidget);
+  });
+
+  testWidgets('shows an incoming resumable multi-file offer', (tester) async {
+    final controller = DiscoveryController(platformOverride: 'android')
+      ..transferActivity = [
+        TransferEvent(
+          eventId: BigInt.one,
+          requestId: BigInt.from(11),
+          authenticatedSessionId: BigInt.from(4),
+          transferId: '11223344556677889900aabbccddeeff',
+          direction: TransferDirection.receiving,
+          kind: TransferEventKind.offerReceived,
+          fileName: 'first.txt',
+          fileNames: const ['first.txt', 'second.bin'],
+          fileSizes: Uint64List.fromList(const [1024, 2048]),
+          fileSize: BigInt.from(3072),
+          transferredBytes: BigInt.zero,
+          completedFiles: 0,
+          resumable: true,
+        ),
+      ];
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: HaloDiscoveryPage(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Incoming files'), findsOneWidget);
+    expect(find.text('2 files · 3.00 KiB'), findsOneWidget);
+    expect(find.text('first.txt · 1.00 KiB'), findsOneWidget);
+    expect(find.text('second.bin · 2.00 KiB'), findsOneWidget);
+    expect(find.text('Accept files'), findsOneWidget);
   });
 }

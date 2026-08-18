@@ -131,15 +131,16 @@ fallback. If the selected Android `Network` disappears or becomes ineligible,
 discovery must restart until endpoint hot replacement exists; changing only
 the default route does not migrate the bound socket. Android hotspot joiners
 use an OS-mediated `WifiNetworkSpecifier`; credentials stay inside native UI,
-and only an exact Wi-Fi `Network` without Internet capability is registered as
-user-approved. iOS/macOS select an eligible, non-expensive, unconstrained
+and only the exact foreground user-selected, non-VPN Wi-Fi `Network` is
+registered as user-approved. Its optional uplink does not make public
+endpoints eligible. iOS/macOS select an eligible, non-expensive, unconstrained
 Network.framework Wi-Fi/Ethernet interface for automatic LAN. macOS may also
 explicitly approve the current Wi-Fi as a lower-priority hotspot scope. Both
-paths apply `IP_BOUND_IF` to a native IPv4 UDP socket and transfer its descriptor
-directly to the same Rust registry. Missing or failed preparation
-also produces a loopback-only listener. Apple IPv6 binding, Windows LAN
-binding, common-broker integration, and Wi-Fi Direct/Wi-Fi Aware providers
-remain incomplete. Creating a hotspot on one Halo endpoint is also not yet a
+paths apply `IPV6_BOUND_IF` to native dual-stack QUIC and remembered-probe UDP
+sockets and transfer their descriptors directly to Rust. Missing or failed
+preparation also produces a loopback-only listener. Windows LAN binding,
+common-broker integration, and Wi-Fi Direct/Wi-Fi Aware providers remain
+incomplete. Creating a hotspot on one Halo endpoint is also not yet a
 supported path: Android's public host API does not expose an exact `Network`
 that satisfies the current socket-ownership contract. Android ↔ macOS and
 Android ↔ Android are the active device-validation targets, with macOS ↔ macOS

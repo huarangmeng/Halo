@@ -8,6 +8,7 @@ publish = false
 description = "Versioned deterministic control-plane messages for Halo"
 
 [dependencies]
+sha2.workspace = true
 thiserror.workspace = true
 
 [lints.rust]

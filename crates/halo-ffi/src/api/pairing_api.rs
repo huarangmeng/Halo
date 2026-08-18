@@ -45,6 +45,7 @@ pub enum PairingEventKind {
     Cancelled,
     Failed,
     Disconnected,
+    Revoked,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -80,6 +81,19 @@ pub struct AuthenticatedSessionInfo {
     pub peer_presence_id: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RememberedPeerInfo {
+    pub handle: String,
+    pub fingerprint: String,
+    pub active_session_id: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransferFileSource {
+    pub source_path: String,
+    pub advertised_name: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransferDirection {
     Sending,
@@ -93,6 +107,7 @@ pub enum TransferEventKind {
     Transferring,
     Completed,
     Rejected,
+    Paused,
     Cancelled,
     Failed,
 }
@@ -106,8 +121,13 @@ pub struct TransferEvent {
     pub direction: TransferDirection,
     pub kind: TransferEventKind,
     pub file_name: String,
+    pub file_names: Vec<String>,
+    pub file_sizes: Vec<u64>,
     pub file_size: u64,
     pub transferred_bytes: u64,
+    pub completed_files: u32,
+    pub current_file_index: Option<u32>,
+    pub resumable: bool,
     pub final_path: Option<String>,
     pub detail: Option<String>,
 }
@@ -339,6 +359,72 @@ pub fn pairing_authenticated_sessions(
         })
 }
 
+pub fn pairing_remembered_endpoint_addresses(session_id: u64) -> Result<Vec<String>, HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(session.service.remembered_endpoint_addresses())
+        .map(|addresses| {
+            addresses
+                .into_iter()
+                .map(|address| address.to_string())
+                .collect()
+        })
+        .map_err(pairing_error)
+}
+
+pub fn pairing_remembered_peers(session_id: u64) -> Result<Vec<RememberedPeerInfo>, HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(session.service.remembered_peers())
+        .map(|peers| peers.into_iter().map(RememberedPeerInfo::from).collect())
+        .map_err(pairing_error)
+}
+
+pub fn pairing_revoke_remembered_peer(session_id: u64, handle: String) -> Result<(), HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(session.service.revoke_remembered_peer(&handle))
+        .map_err(pairing_error)
+}
+
+pub fn pairing_revoke_authenticated_peer(
+    session_id: u64,
+    authenticated_session_id: u64,
+) -> Result<(), HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(
+            session
+                .service
+                .revoke_authenticated_peer(authenticated_session_id),
+        )
+        .map_err(pairing_error)
+}
+
 pub fn pairing_respond(
     session_id: u64,
     request_id: u64,
@@ -377,6 +463,36 @@ pub fn pairing_transfer_send_file(
         .map_err(transfer_error)
 }
 
+pub fn pairing_transfer_send_files(
+    session_id: u64,
+    authenticated_session_id: u64,
+    sources: Vec<TransferFileSource>,
+) -> Result<String, HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(
+            session.service.send_files(
+                authenticated_session_id,
+                sources
+                    .into_iter()
+                    .map(|source| {
+                        halo_core::TransferFileSource::new(
+                            PathBuf::from(source.source_path),
+                            source.advertised_name,
+                        )
+                    })
+                    .collect(),
+            ),
+        )
+        .map_err(transfer_error)
+}
+
 pub fn pairing_transfer_events(
     session_id: u64,
     after_event_id: u64,
@@ -399,6 +515,7 @@ pub fn pairing_transfer_respond(
     accepted: bool,
     staging_directory: Option<String>,
     destination_directory: Option<String>,
+    available_bytes: Option<u64>,
 ) -> Result<(), HaloApiError> {
     let sessions = pairing_sessions()
         .lock()
@@ -407,11 +524,45 @@ pub fn pairing_transfer_respond(
         .get(&session_id)
         .ok_or(HaloApiError::SessionNotFound)?
         .service
-        .respond_to_transfer(
+        .respond_to_transfer_with_space(
             request_id,
             accepted,
             staging_directory.map(PathBuf::from),
             destination_directory.map(PathBuf::from),
+            available_bytes,
+        )
+        .map_err(transfer_error)
+}
+
+pub fn pairing_transfer_pause(session_id: u64, transfer_id: String) -> Result<(), HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?
+        .service
+        .pause_transfer(&transfer_id)
+        .map_err(transfer_error)
+}
+
+pub fn pairing_transfer_retry(
+    session_id: u64,
+    authenticated_session_id: u64,
+    transfer_id: String,
+) -> Result<String, HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(
+            session
+                .service
+                .retry_transfer(authenticated_session_id, &transfer_id),
         )
         .map_err(transfer_error)
 }
@@ -420,11 +571,34 @@ pub fn pairing_transfer_cancel(session_id: u64, transfer_id: String) -> Result<(
     let sessions = pairing_sessions()
         .lock()
         .map_err(|_| HaloApiError::InternalState)?;
-    sessions
+    let session = sessions
         .get(&session_id)
-        .ok_or(HaloApiError::SessionNotFound)?
-        .service
-        .cancel_transfer(&transfer_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(session.service.cancel_transfer(&transfer_id))
+        .map_err(transfer_error)
+}
+
+pub fn pairing_transfer_take_finished_sources(
+    session_id: u64,
+    transfer_id: String,
+) -> Result<Vec<String>, HaloApiError> {
+    let sessions = pairing_sessions()
+        .lock()
+        .map_err(|_| HaloApiError::InternalState)?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or(HaloApiError::SessionNotFound)?;
+    session
+        .runtime
+        .block_on(session.service.take_finished_transfer_sources(&transfer_id))
+        .map(|paths| {
+            paths
+                .into_iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect()
+        })
         .map_err(transfer_error)
 }
 
@@ -464,6 +638,16 @@ impl From<halo_core::AuthenticatedSessionInfo> for AuthenticatedSessionInfo {
     }
 }
 
+impl From<halo_core::RememberedPeerInfo> for RememberedPeerInfo {
+    fn from(peer: halo_core::RememberedPeerInfo) -> Self {
+        Self {
+            handle: peer.handle,
+            fingerprint: peer.fingerprint,
+            active_session_id: peer.active_session_id,
+        }
+    }
+}
+
 impl From<halo_core::TransferEvent> for TransferEvent {
     fn from(event: halo_core::TransferEvent) -> Self {
         Self {
@@ -474,8 +658,13 @@ impl From<halo_core::TransferEvent> for TransferEvent {
             direction: event.direction.into(),
             kind: event.kind.into(),
             file_name: event.file_name,
+            file_names: event.file_names,
+            file_sizes: event.file_sizes,
             file_size: event.file_size,
             transferred_bytes: event.transferred_bytes,
+            completed_files: event.completed_files,
+            current_file_index: event.current_file_index,
+            resumable: event.resumable,
             final_path: event
                 .final_path
                 .map(|path| path.to_string_lossy().into_owned()),
@@ -501,6 +690,7 @@ impl From<halo_core::TransferEventKind> for TransferEventKind {
             halo_core::TransferEventKind::Transferring => Self::Transferring,
             halo_core::TransferEventKind::Completed => Self::Completed,
             halo_core::TransferEventKind::Rejected => Self::Rejected,
+            halo_core::TransferEventKind::Paused => Self::Paused,
             halo_core::TransferEventKind::Cancelled => Self::Cancelled,
             halo_core::TransferEventKind::Failed => Self::Failed,
         }
@@ -520,6 +710,7 @@ impl From<halo_core::PairingEventKind> for PairingEventKind {
             halo_core::PairingEventKind::Cancelled => Self::Cancelled,
             halo_core::PairingEventKind::Failed => Self::Failed,
             halo_core::PairingEventKind::Disconnected => Self::Disconnected,
+            halo_core::PairingEventKind::Revoked => Self::Revoked,
         }
     }
 }
@@ -558,6 +749,12 @@ fn pairing_error(error: PairingError) -> HaloApiError {
         PairingError::RequestNotPending => HaloApiError::InvalidArgument {
             message: "pairing request is no longer pending".to_owned(),
         },
+        PairingError::AuthenticatedSessionNotFound => HaloApiError::InvalidArgument {
+            message: "authenticated session does not exist".to_owned(),
+        },
+        PairingError::InvalidPeerHandle => HaloApiError::InvalidArgument {
+            message: "remembered peer handle is invalid".to_owned(),
+        },
         PairingError::PlatformChannelNotFound => HaloApiError::InvalidArgument {
             message: "platform pairing channel does not exist".to_owned(),
         },
@@ -580,6 +777,9 @@ fn transfer_error(error: TransferServiceError) -> HaloApiError {
         TransferServiceError::FileRejectedByPolicy => HaloApiError::Core {
             message: "file exceeds the configured transfer size limit".to_owned(),
         },
+        TransferServiceError::InvalidSourceCount => HaloApiError::InvalidArgument {
+            message: "transfer source count is invalid".to_owned(),
+        },
         TransferServiceError::SessionNotFound => HaloApiError::InvalidArgument {
             message: "authenticated LAN session does not exist".to_owned(),
         },
@@ -596,8 +796,14 @@ fn transfer_error(error: TransferServiceError) -> HaloApiError {
         TransferServiceError::TransferNotFound => HaloApiError::InvalidArgument {
             message: "transfer does not exist".to_owned(),
         },
+        TransferServiceError::TransferNotPaused => HaloApiError::InvalidArgument {
+            message: "transfer is not paused or no longer has retry state".to_owned(),
+        },
+        TransferServiceError::PeerMismatch => HaloApiError::InvalidArgument {
+            message: "paused transfer belongs to a different authenticated peer".to_owned(),
+        },
         TransferServiceError::InternalState => HaloApiError::InternalState,
-        TransferServiceError::Prepare(error) => HaloApiError::Core {
+        TransferServiceError::PrepareBatch(error) => HaloApiError::Core {
             message: error.to_string(),
         },
     }

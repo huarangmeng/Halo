@@ -1,10 +1,17 @@
-use std::time::Duration;
+use std::{
+    net::{SocketAddr, UdpSocket},
+    time::Duration,
+};
 
 use halo_discovery::{
     Capabilities, DiscoveryHandle, DiscoveryManager, DiscoverySession, LocalPresence, PresenceId,
     ProtocolRange, ProviderId, ProviderKind, ProviderState,
     ble::{decode_presence, encode_presence},
-    providers::{MdnsProvider, PresenceV4Provider, PresenceV6Provider},
+    is_local_network_ip,
+    providers::{
+        DirectProbeConfig, DirectProbeProvider, KnownEndpoint, MdnsProvider, PRESENCE_PORT,
+        PresenceV4Provider, PresenceV6Provider,
+    },
 };
 use thiserror::Error;
 
@@ -46,11 +53,13 @@ impl From<halo_discovery::DeviceType> for DeviceType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct DiscoveryConfig {
     quic_port: u16,
     enable_lan: bool,
     device_type: DeviceType,
+    direct_probe_socket: Option<UdpSocket>,
+    remembered_endpoints: Vec<SocketAddr>,
 }
 
 impl DiscoveryConfig {
@@ -60,12 +69,29 @@ impl DiscoveryConfig {
             quic_port,
             enable_lan: true,
             device_type,
+            direct_probe_socket: None,
+            remembered_endpoints: Vec::new(),
         }
     }
 
     #[must_use]
     pub const fn with_lan(mut self, enable_lan: bool) -> Self {
         self.enable_lan = enable_lan;
+        self
+    }
+
+    #[must_use]
+    pub fn with_direct_probe(
+        mut self,
+        socket: UdpSocket,
+        remembered_endpoints: Vec<SocketAddr>,
+    ) -> Self {
+        self.direct_probe_socket = Some(socket);
+        self.remembered_endpoints = remembered_endpoints
+            .into_iter()
+            .filter(|endpoint| is_local_network_ip(endpoint.ip()))
+            .take(8)
+            .collect();
         self
     }
 }
@@ -122,26 +148,53 @@ impl DiscoveryService {
     pub async fn start(
         config: DiscoveryConfig,
     ) -> Result<(Self, DiscoveryStartup), DiscoveryError> {
+        let DiscoveryConfig {
+            quic_port,
+            enable_lan,
+            device_type,
+            direct_probe_socket,
+            remembered_endpoints,
+        } = config;
         let protocol = ProtocolRange::new(1, 1).map_err(core_error)?;
         let local = LocalPresence::new(
             PresenceId::random(),
             protocol,
-            Capabilities::default().with_device_type(config.device_type.into()),
-            config.quic_port,
+            Capabilities::default().with_device_type(device_type.into()),
+            quic_port,
         )
         .map_err(core_error)?;
         let mut manager = DiscoveryManager::new(local.clone());
-        if config.enable_lan {
+        if enable_lan {
             manager = manager
                 .with_provider(MdnsProvider::default())
                 .with_provider(PresenceV4Provider::default())
                 .with_provider(PresenceV6Provider::default());
+            let direct_config = DirectProbeConfig {
+                endpoints: remembered_endpoints
+                    .into_iter()
+                    .take(8)
+                    .map(|mut address| {
+                        address.set_port(PRESENCE_PORT);
+                        KnownEndpoint {
+                            expected_presence: None,
+                            discovery_address: address,
+                        }
+                    })
+                    .collect(),
+                ..DirectProbeConfig::default()
+            };
+            let direct = match direct_probe_socket {
+                Some(socket) => DirectProbeProvider::with_bound_socket(direct_config, socket),
+                None => DirectProbeProvider::new(DirectProbeConfig::default()),
+            }
+            .map_err(core_error)?;
+            manager = manager.with_provider(direct);
         }
         let session = manager.start().await.map_err(core_error)?;
         let handle = session.handle();
         let startup = DiscoveryStartup {
             presence_id: local.presence_id.to_string(),
-            device_type: config.device_type,
+            device_type,
             ble_presence: encode_presence(&local, 1).to_vec(),
         };
         Ok((

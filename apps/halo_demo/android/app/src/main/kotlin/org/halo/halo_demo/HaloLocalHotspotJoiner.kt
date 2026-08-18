@@ -56,14 +56,14 @@ internal class HaloLocalHotspotJoiner(context: Context) : AutoCloseable {
         val networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(available: Network) {
                 val capabilities = manager.getNetworkCapabilities(available) ?: return
-                acceptIfLocalOnly(available, capabilities)
+                acceptIfUserApprovedWifi(available, capabilities)
             }
 
             override fun onCapabilitiesChanged(
                 available: Network,
                 capabilities: NetworkCapabilities,
             ) {
-                acceptIfLocalOnly(available, capabilities)
+                acceptIfUserApprovedWifi(available, capabilities)
             }
 
             override fun onUnavailable() {
@@ -87,14 +87,13 @@ internal class HaloLocalHotspotJoiner(context: Context) : AutoCloseable {
         }
     }
 
-    private fun acceptIfLocalOnly(
+    private fun acceptIfUserApprovedWifi(
         available: Network,
         capabilities: NetworkCapabilities,
     ) {
         if (network != null ||
             !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
         ) {
             return
         }

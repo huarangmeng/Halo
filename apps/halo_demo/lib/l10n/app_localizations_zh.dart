@@ -127,6 +127,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingDisconnected => '安全连接已结束';
 
   @override
+  String get pairingRevoked => '已移除设备信任';
+
+  @override
+  String get pairingForget => '忘记设备';
+
+  @override
+  String get pairingForgetTitle => '要忘记这台设备吗？';
+
+  @override
+  String get pairingForgetDescription =>
+      'Halo 将删除这台设备的密钥与已记住的网络绑定。下次连接时需要重新核对认证码。';
+
+  @override
+  String get pairingForgetConfirm => '忘记';
+
+  @override
+  String get pairingForgetCancel => '保留设备';
+
+  @override
   String get pairingAccept => '短码一致，接受';
 
   @override
@@ -389,6 +408,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get diagnosticsRecentEvents => '最近的原生 BLE 事件';
 
   @override
+  String get diagnosticsTrustedDevices => '已信任设备';
+
+  @override
+  String get diagnosticsNoTrustedDevices => '当前没有已记住的设备。';
+
+  @override
+  String diagnosticsTrustedDeviceDescription(String fingerprint) {
+    return '指纹 $fingerprint';
+  }
+
+  @override
   String get diagnosticsNoEvents => '原生 BLE 暂未报告错误。';
 
   @override
@@ -529,18 +559,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get transferIncomingTitle => '收到文件请求';
 
   @override
+  String get transferIncomingBatchTitle => '收到多个文件';
+
+  @override
   String transferOfferDescription(String name, String size) {
     return '$name · $size';
+  }
+
+  @override
+  String transferBatchOfferDescription(int count, String size) {
+    return '$count 个文件 · $size';
   }
 
   @override
   String get transferAccept => '接收文件';
 
   @override
+  String get transferAcceptBatch => '接收文件';
+
+  @override
   String get transferReject => '拒绝';
 
   @override
   String get transferSendFile => '发送文件';
+
+  @override
+  String get transferSendFiles => '发送文件';
 
   @override
   String get transferLanOnly => '文件通过已认证的本地 QUIC 连接传输；蓝牙不承载文件数据。';
@@ -558,13 +602,65 @@ class AppLocalizationsZh extends AppLocalizations {
   String get transferRejected => '已拒绝传输';
 
   @override
+  String get transferPaused => '传输已暂停';
+
+  @override
   String get transferCancelled => '已取消传输';
 
   @override
   String get transferFailed => '传输失败';
 
   @override
+  String get transferPause => '暂停传输';
+
+  @override
+  String get transferRetry => '重试传输';
+
+  @override
   String get transferCancel => '取消传输';
+
+  @override
+  String transferFilesProgress(int completed, int total) {
+    return '已完成 $completed/$total 个文件';
+  }
+
+  @override
+  String get transferErrorInsufficientSpace => '目标位置的可用空间不足。';
+
+  @override
+  String get transferErrorDestinationExists => '已存在同名文件，Halo 未覆盖原文件。';
+
+  @override
+  String get transferErrorIntegrity => '文件完整性校验失败，未生成最终文件。';
+
+  @override
+  String get transferErrorSourceChanged => '所选源文件在确认后发生变化，请重新选择。';
+
+  @override
+  String get transferErrorResume => '已保存的续传状态与当前设备或文件清单不匹配。';
+
+  @override
+  String get transferErrorNetwork => '已认证的本地连接已断开，请重新连接后续传。';
+
+  @override
+  String get transferErrorProtocol => '对方发送了不兼容的传输消息。';
+
+  @override
+  String get transferErrorStorage => '应用私有传输存储当前不可用。';
+
+  @override
+  String get transferErrorInvalidName => '所选文件名无法在所有支持的平台上安全使用。';
+
+  @override
+  String get transferErrorDuplicateName => '文件列表中存在重复的目标文件名。';
+
+  @override
+  String get transferRetrying => '正在通过已认证连接重试。';
+
+  @override
+  String transferErrorUnknown(String detail) {
+    return '传输失败（$detail）。';
+  }
 
   @override
   String transferReceivedAt(String path) {

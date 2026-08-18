@@ -128,6 +128,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pairingDisconnected => 'Secure connection ended';
 
   @override
+  String get pairingRevoked => 'Device trust removed';
+
+  @override
+  String get pairingForget => 'Forget device';
+
+  @override
+  String get pairingForgetTitle => 'Forget this device?';
+
+  @override
+  String get pairingForgetDescription =>
+      'Halo will remove this device key and remembered network bindings. A future connection requires code verification again.';
+
+  @override
+  String get pairingForgetConfirm => 'Forget';
+
+  @override
+  String get pairingForgetCancel => 'Keep device';
+
+  @override
   String get pairingAccept => 'Codes match — accept';
 
   @override
@@ -447,6 +466,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get diagnosticsRecentEvents => 'Recent native BLE events';
 
   @override
+  String get diagnosticsTrustedDevices => 'Trusted devices';
+
+  @override
+  String get diagnosticsNoTrustedDevices => 'No devices are remembered.';
+
+  @override
+  String diagnosticsTrustedDeviceDescription(String fingerprint) {
+    return 'Fingerprint $fingerprint';
+  }
+
+  @override
   String get diagnosticsNoEvents => 'No native BLE errors have been reported.';
 
   @override
@@ -591,18 +621,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get transferIncomingTitle => 'Incoming file';
 
   @override
+  String get transferIncomingBatchTitle => 'Incoming files';
+
+  @override
   String transferOfferDescription(String name, String size) {
     return '$name · $size';
+  }
+
+  @override
+  String transferBatchOfferDescription(int count, String size) {
+    return '$count files · $size';
   }
 
   @override
   String get transferAccept => 'Accept file';
 
   @override
+  String get transferAcceptBatch => 'Accept files';
+
+  @override
   String get transferReject => 'Reject';
 
   @override
   String get transferSendFile => 'Send file';
+
+  @override
+  String get transferSendFiles => 'Send files';
 
   @override
   String get transferLanOnly =>
@@ -621,13 +665,74 @@ class AppLocalizationsEn extends AppLocalizations {
   String get transferRejected => 'Transfer rejected';
 
   @override
+  String get transferPaused => 'Transfer paused';
+
+  @override
   String get transferCancelled => 'Transfer cancelled';
 
   @override
   String get transferFailed => 'Transfer failed';
 
   @override
+  String get transferPause => 'Pause transfer';
+
+  @override
+  String get transferRetry => 'Retry transfer';
+
+  @override
   String get transferCancel => 'Cancel transfer';
+
+  @override
+  String transferFilesProgress(int completed, int total) {
+    return '$completed of $total files complete';
+  }
+
+  @override
+  String get transferErrorInsufficientSpace =>
+      'Not enough free space is available at the destination.';
+
+  @override
+  String get transferErrorDestinationExists =>
+      'A file with this name already exists. Halo did not overwrite it.';
+
+  @override
+  String get transferErrorIntegrity =>
+      'File verification failed. No final file was created.';
+
+  @override
+  String get transferErrorSourceChanged =>
+      'A selected source changed after the offer. Select it again.';
+
+  @override
+  String get transferErrorResume =>
+      'Saved resume data no longer matches this peer or file list.';
+
+  @override
+  String get transferErrorNetwork =>
+      'The authenticated local connection ended. Reconnect to resume.';
+
+  @override
+  String get transferErrorProtocol =>
+      'The peer sent an incompatible transfer message.';
+
+  @override
+  String get transferErrorStorage => 'Private transfer storage is unavailable.';
+
+  @override
+  String get transferErrorInvalidName =>
+      'A selected filename is not safe on all supported platforms.';
+
+  @override
+  String get transferErrorDuplicateName =>
+      'The file list contains duplicate destination names.';
+
+  @override
+  String get transferRetrying => 'Retrying on the authenticated connection.';
+
+  @override
+  String transferErrorUnknown(String detail) {
+    return 'Transfer failed ($detail).';
+  }
 
   @override
   String transferReceivedAt(String path) {

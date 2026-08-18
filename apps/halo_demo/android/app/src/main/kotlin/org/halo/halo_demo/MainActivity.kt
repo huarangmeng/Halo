@@ -111,14 +111,23 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         if (requestCode != FILE_PICK_REQUEST) return
         val pendingResult = filePickerResult ?: return
         filePickerResult = null
-        val uri = data?.data
-        if (resultCode != Activity.RESULT_OK || uri == null) {
+        if (resultCode != Activity.RESULT_OK) {
+            pendingResult.success(null)
+            return
+        }
+        val uris = buildList {
+            data?.clipData?.let { clip ->
+                for (index in 0 until clip.itemCount) add(clip.getItemAt(index).uri)
+            }
+            data?.data?.let(::add)
+        }.distinct()
+        if (uris.isEmpty()) {
             pendingResult.success(null)
             return
         }
         Thread {
             try {
-                val selected = HaloTransferStorage(this).copySelectedFile(uri)
+                val selected = HaloTransferStorage(this).copySelectedFiles(uris)
                 runOnUiThread { pendingResult.success(selected) }
             } catch (_: Exception) {
                 runOnUiThread {
@@ -192,7 +201,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
                 }
                 "trustStoreDirectory" -> result.success(identityStore.trustStoreDirectory)
                 "transferDirectories" -> result.success(HaloTransferStorage(this).directories())
-                "pickTransferFile" -> pickTransferFile(result)
+                "pickTransferFiles" -> pickTransferFiles(call, result)
                 "discardTransferSource" -> {
                     val path = call.argument<String>("path")
                     if (path == null) {
@@ -213,7 +222,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         }
     }
 
-    private fun pickTransferFile(result: MethodChannel.Result) {
+    private fun pickTransferFiles(call: MethodCall, result: MethodChannel.Result) {
         if (filePickerResult != null) {
             result.error("file-picker-in-progress", "A file selection is already active", null)
             return
@@ -222,6 +231,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, call.argument<Boolean>("allowMultiple") == true)
         }
         try {
             startActivityForResult(intent, FILE_PICK_REQUEST)
@@ -673,15 +683,22 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         userApprovedHotspot: Boolean,
     ): Boolean {
         DatagramSocket(null).use { socket ->
-            socket.reuseAddress = false
-            socket.bind(InetSocketAddress(0))
-            network.bindSocket(socket)
-            val registered = if (userApprovedHotspot) {
-                HaloNativeSocketBridge.registerUserApprovedHotspotSocket(socket)
-            } else {
-                HaloNativeSocketBridge.registerBoundSocket(socket)
+            DatagramSocket(null).use { discoverySocket ->
+                for (candidate in listOf(socket, discoverySocket)) {
+                    candidate.reuseAddress = false
+                    candidate.bind(InetSocketAddress(0))
+                    network.bindSocket(candidate)
+                }
+                val registered = if (userApprovedHotspot) {
+                    HaloNativeSocketBridge.registerUserApprovedHotspotSockets(
+                        socket,
+                        discoverySocket,
+                    )
+                } else {
+                    HaloNativeSocketBridge.registerBoundSockets(socket, discoverySocket)
+                }
+                if (!registered) return false
             }
-            if (!registered) return false
         }
         preparedNetworkHandle = network.networkHandle
         preparedNetworkIsUserApprovedHotspot = userApprovedHotspot
@@ -751,8 +768,7 @@ class MainActivity : FlutterActivity(), EventChannel.StreamHandler {
         capabilities: NetworkCapabilities,
     ): Boolean =
         capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-            !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
-            !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
 
     private fun wifiDirectCapability(): Map<String, String> =
         if (packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_DIRECT)) {

@@ -15,20 +15,26 @@ remaining product capabilities are deferred.
 > physical-device interoperability testing. The Rust core now has an
 > experimental TLS-bound pairing protocol, QUIC listener/client, protected
 > identity adapters, remembered-peer persistence, and a Flutter consent flow.
-> The integrated flow passes host loopback and Android, iOS Simulator, and
-> macOS compile checks, but
-> has not yet been verified between physical Android and macOS devices. The LAN
-> path now retains authenticated QUIC sessions and the Rust single-file engine
-> verifies and safely finalizes bounded chunks. The shared Demo now wires this
-> LAN path to Android/macOS native file pickers and receiver consent without
-> moving file bytes through Dart. The common data-channel broker now separates
+> The integrated flow passes host loopback and Android/macOS compile checks but
+> has not yet been verified end to end between physical Android and macOS
+> devices. The LAN path retains authenticated QUIC sessions and uses the single
+> application protocol v1. It implements bounded multi-file
+> manifests, receiver consent, disk-space admission, file/chunk progress,
+> explicit pause/cancel, retry after fresh authentication, peer-bound durable
+> sender jobs and receiver chunk-prefix state, whole-file verification,
+> no-overwrite batch finalization, and explicit trust revocation. The
+> unpublished single-file draft has been removed. The shared Demo uses
+> Android/macOS native multi-file pickers without moving file bytes through
+> Dart. Remembered endpoint probes use a second socket pinned to the same
+> approved Android `Network` or Apple interface as QUIC. The common
+> data-channel broker separates
 > automatic unmetered shared LAN from lower-priority, explicitly approved local
 > hotspot paths while enforcing interface binding, bounded prompts, and
 > authentication-before-win. Android can join a WPA2 local-only hotspot through
 > `WifiNetworkSpecifier`, bind a UDP socket to that exact OS `Network`, and hand
 > it to Rust without exposing credentials to Dart. macOS can explicitly approve
-> the current Wi-Fi as a hotspot path and binds its IPv4 socket with
-> `IP_BOUND_IF`; ordinary Wi-Fi/Ethernet still requires a non-expensive,
+> the current Wi-Fi as a hotspot path and binds dual-stack sockets with
+> `IPV6_BOUND_IF`; ordinary Wi-Fi/Ethernet still requires a non-expensive,
 > unconstrained path by default. Endpoint-hosted hotspot creation is not yet
 > claimed because the host-side exact-path contract still lacks device
 > evidence. Windows LAN binding and Direct/Aware adapters remain pending and

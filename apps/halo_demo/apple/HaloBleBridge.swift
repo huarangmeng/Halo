@@ -1,4 +1,5 @@
 import CoreBluetooth
+import Darwin
 import Foundation
 import Network
 import Security
@@ -502,8 +503,8 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       }
       return
     }
-    if call.method == "pickTransferFile" {
-      pickTransferFile(result: result)
+    if call.method == "pickTransferFiles" {
+      pickTransferFiles(call: call, result: result)
       return
     }
     if call.method == "discardTransferSource" {
@@ -649,7 +650,7 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       .appendingPathComponent("halo-transfer-v1", isDirectory: true)
   }
 
-  private func transferDirectories() throws -> [String: String] {
+  private func transferDirectories() throws -> [String: Any] {
     let root = try transferRootDirectory()
     let staging = root.appendingPathComponent("staging", isDirectory: true)
     let destination = root.appendingPathComponent("received", isDirectory: true)
@@ -660,17 +661,34 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
         withIntermediateDirectories: true
       )
     }
-    return ["staging": staging.path, "destination": destination.path]
+    let capacity = try destination.resourceValues(
+      forKeys: [
+        .volumeAvailableCapacityForImportantUsageKey,
+        .volumeAvailableCapacityKey,
+      ]
+    )
+    let availableBytes = capacity.volumeAvailableCapacityForImportantUsage
+      ?? Int64(capacity.volumeAvailableCapacity ?? 0)
+    return [
+      "staging": staging.path,
+      "destination": destination.path,
+      "availableBytes": max(0, availableBytes),
+    ]
   }
 
-  private func pickTransferFile(result: @escaping FlutterResult) {
+  private func pickTransferFiles(
+    call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
     #if os(macOS)
+    let allowMultiple =
+      (call.arguments as? [String: Any])?["allowMultiple"] as? Bool ?? false
     let panel = NSOpenPanel()
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
-    panel.allowsMultipleSelection = false
+    panel.allowsMultipleSelection = allowMultiple
     panel.begin { [weak self] response in
-      guard response == .OK, let source = panel.url else {
+      guard response == .OK, !panel.urls.isEmpty else {
         result(nil)
         return
       }
@@ -678,12 +696,8 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
         result(FlutterError(code: "transfer-storage", message: nil, details: nil))
         return
       }
-      let accessed = source.startAccessingSecurityScopedResource()
-      defer { if accessed { source.stopAccessingSecurityScopedResource() } }
       do {
-        let values = try source.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true,
-              Int64(values.fileSize ?? 0) <= 10 * 1024 * 1024 * 1024 * 1024 else {
+        guard panel.urls.count <= 8 else {
           throw CocoaError(.fileReadTooLarge)
         }
         let root = try transferRootDirectory()
@@ -692,11 +706,41 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
           at: outgoing,
           withIntermediateDirectories: true
         )
-        let destination = outgoing
-          .appendingPathComponent(UUID().uuidString)
-          .appendingPathExtension("upload")
-        try FileManager.default.copyItem(at: source, to: destination)
-        result(["path": destination.path, "name": source.lastPathComponent])
+        var copied: [URL] = []
+        var aggregateSize: Int64 = 0
+        do {
+          let selected = try panel.urls.map { source -> [String: String] in
+            let accessed = source.startAccessingSecurityScopedResource()
+            defer { if accessed { source.stopAccessingSecurityScopedResource() } }
+            let values = try source.resourceValues(
+              forKeys: [.isRegularFileKey, .fileSizeKey]
+            )
+            let fileSize = Int64(values.fileSize ?? -1)
+            guard values.isRegularFile == true,
+                  fileSize >= 0,
+                  fileSize <= 10 * 1024 * 1024 * 1024 - aggregateSize
+            else {
+              throw CocoaError(.fileReadTooLarge)
+            }
+            let destination = outgoing
+              .appendingPathComponent(UUID().uuidString)
+              .appendingPathExtension("upload")
+            let copiedSize = try self.copyTransferSource(
+              source,
+              to: destination,
+              maximumBytes: 10 * 1024 * 1024 * 1024 - aggregateSize
+            )
+            aggregateSize += copiedSize
+            copied.append(destination)
+            return ["path": destination.path, "name": source.lastPathComponent]
+          }
+          result(selected)
+        } catch {
+          for destination in copied {
+            try? FileManager.default.removeItem(at: destination)
+          }
+          throw error
+        }
       } catch {
         result(FlutterError(
           code: "transfer-file-copy",
@@ -713,6 +757,42 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
     ))
     #endif
   }
+
+  #if os(macOS)
+  private func copyTransferSource(
+    _ source: URL,
+    to destination: URL,
+    maximumBytes: Int64
+  ) throws -> Int64 {
+    guard FileManager.default.createFile(
+      atPath: destination.path,
+      contents: nil
+    ) else {
+      throw CocoaError(.fileWriteUnknown)
+    }
+    do {
+      let input = try FileHandle(forReadingFrom: source)
+      let output = try FileHandle(forWritingTo: destination)
+      defer {
+        try? input.close()
+        try? output.close()
+      }
+      var total: Int64 = 0
+      while let data = try input.read(upToCount: 64 * 1_024), !data.isEmpty {
+        guard Int64(data.count) <= maximumBytes - total else {
+          throw CocoaError(.fileReadTooLarge)
+        }
+        try output.write(contentsOf: data)
+        total += Int64(data.count)
+      }
+      try output.synchronize()
+      return total
+    } catch {
+      try? FileManager.default.removeItem(at: destination)
+      throw error
+    }
+  }
+  #endif
 
   private func discardTransferSource(path: String) throws {
     let outgoing = try transferRootDirectory()
@@ -940,14 +1020,24 @@ final class HaloBleBridge: NSObject, FlutterStreamHandler, @unchecked Sendable {
       return
     }
     do {
-      let descriptor = try HaloAppleBoundLanSocket.makeIPv4Socket(on: interface)
-      // Rust consumes every valid descriptor, including when registration
-      // returns an internal error. Swift must never close it after this call.
+      let descriptor = try HaloAppleBoundLanSocket.makeDualStackSocket(on: interface)
+      let discoveryDescriptor: Int32
+      do {
+        discoveryDescriptor = try HaloAppleBoundLanSocket.makeDualStackSocket(on: interface)
+      } catch {
+        Darwin.close(descriptor)
+        throw error
+      }
+      // Rust consumes both valid descriptors, including when registration
+      // returns an internal error. Swift must never close them after this call.
       let registrationStatus = switch lanScope {
       case .shared:
-        halo_apple_lan_register_bound_socket(descriptor)
+        halo_apple_lan_register_bound_socket(descriptor, discoveryDescriptor)
       case .userApprovedHotspot:
-        halo_apple_lan_register_user_approved_hotspot_socket(descriptor)
+        halo_apple_lan_register_user_approved_hotspot_socket(
+          descriptor,
+          discoveryDescriptor
+        )
       }
       guard registrationStatus == haloAppleNativeStatusOK else {
         localNetworkState = "failed"

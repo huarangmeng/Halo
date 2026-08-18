@@ -24,7 +24,7 @@ public enum HaloAppleBoundLanSocket {
         scope: HaloAppleLocalNetworkScope = .shared
     ) -> NWInterface? {
         guard path.status == .satisfied,
-              path.supportsIPv4,
+              (path.supportsIPv4 || path.supportsIPv6),
               allows(
                   isExpensive: path.isExpensive,
                   isConstrained: path.isConstrained,
@@ -57,21 +57,21 @@ public enum HaloAppleBoundLanSocket {
         }
     }
 
-    public static func makeIPv4Socket(on interface: NWInterface) throws -> Int32 {
+    public static func makeDualStackSocket(on interface: NWInterface) throws -> Int32 {
         guard interface.type == .wifi || interface.type == .wiredEthernet,
               let index = UInt32(exactly: interface.index),
               index != 0
         else {
             throw HaloAppleBoundLanSocketError.invalidInterface
         }
-        return try makeIPv4Socket(interfaceIndex: index)
+        return try makeDualStackSocket(interfaceIndex: index)
     }
 
-    static func makeIPv4Socket(interfaceIndex: UInt32) throws -> Int32 {
+    static func makeDualStackSocket(interfaceIndex: UInt32) throws -> Int32 {
         guard interfaceIndex != 0 else {
             throw HaloAppleBoundLanSocketError.invalidInterface
         }
-        let descriptor = Darwin.socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        let descriptor = Darwin.socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
         guard descriptor >= 0 else {
             throw HaloAppleBoundLanSocketError.socketCreationFailed
         }
@@ -80,8 +80,8 @@ public enum HaloAppleBoundLanSocket {
             let optionResult = withUnsafePointer(to: &boundInterface) { pointer in
                 Darwin.setsockopt(
                     descriptor,
-                    IPPROTO_IP,
-                    IP_BOUND_IF,
+                    IPPROTO_IPV6,
+                    IPV6_BOUND_IF,
                     pointer,
                     socklen_t(MemoryLayout<UInt32>.size)
                 )
@@ -90,17 +90,31 @@ public enum HaloAppleBoundLanSocket {
                 throw HaloAppleBoundLanSocketError.interfaceBindingFailed
             }
 
-            var address = sockaddr_in()
-            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = in_port_t(0)
-            address.sin_addr = in_addr(s_addr: in_addr_t(0))
+            var ipv6Only: Int32 = 0
+            let dualStackResult = withUnsafePointer(to: &ipv6Only) { pointer in
+                Darwin.setsockopt(
+                    descriptor,
+                    IPPROTO_IPV6,
+                    IPV6_V6ONLY,
+                    pointer,
+                    socklen_t(MemoryLayout<Int32>.size)
+                )
+            }
+            guard dualStackResult == 0 else {
+                throw HaloAppleBoundLanSocketError.socketCreationFailed
+            }
+
+            var address = sockaddr_in6()
+            address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            address.sin6_family = sa_family_t(AF_INET6)
+            address.sin6_port = in_port_t(0)
+            address.sin6_addr = in6addr_any
             let bindResult = withUnsafePointer(to: &address) { pointer in
                 pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
                     Darwin.bind(
                         descriptor,
                         socketAddress,
-                        socklen_t(MemoryLayout<sockaddr_in>.size)
+                        socklen_t(MemoryLayout<sockaddr_in6>.size)
                     )
                 }
             }

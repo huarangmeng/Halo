@@ -19,13 +19,29 @@ pub trait DataIo: Send {
     async fn close(&mut self);
 }
 
+pub(crate) fn data_record_header_length(prefix: &[u8]) -> Result<usize, DataIoError> {
+    match prefix {
+        b"HDF1" => Ok(DATA_RECORD_HEADER_LEN),
+        _ => Err(DataIoError::InvalidMagic),
+    }
+}
+
 pub(crate) fn data_record_length(header: &[u8]) -> Result<usize, DataIoError> {
-    if header.len() != DATA_RECORD_HEADER_LEN {
+    if header.len() < 4 {
         return Err(DataIoError::Truncated);
     }
-    let payload_length =
-        u32::from_be_bytes([header[24], header[25], header[26], header[27]]) as usize;
-    let record_length = DATA_RECORD_HEADER_LEN
+    let header_length = data_record_header_length(&header[..4])?;
+    if header.len() != header_length {
+        return Err(DataIoError::Truncated);
+    }
+    let payload_offset = 28;
+    let payload_length = u32::from_be_bytes([
+        header[payload_offset],
+        header[payload_offset + 1],
+        header[payload_offset + 2],
+        header[payload_offset + 3],
+    ]) as usize;
+    let record_length = header_length
         .checked_add(payload_length)
         .ok_or(DataIoError::RecordTooLarge(usize::MAX))?;
     if payload_length == 0 || record_length > MAX_DATA_RECORD_LEN {
@@ -40,6 +56,8 @@ pub enum DataIoError {
     RecordTooLarge(usize),
     #[error("file-data record ended before its declared length")]
     Truncated,
+    #[error("file-data record magic is invalid")]
+    InvalidMagic,
     #[error("failed to read file-data stream")]
     Read,
     #[error("failed to write file-data stream")]
@@ -55,22 +73,27 @@ mod tests {
     #[test]
     fn record_framing_is_bounded_before_payload_allocation() {
         let mut header = [0_u8; DATA_RECORD_HEADER_LEN];
-        header[24..28].copy_from_slice(&1_u32.to_be_bytes());
+        header[..4].copy_from_slice(b"HDF1");
+        header[28..32].copy_from_slice(&1_u32.to_be_bytes());
         assert_eq!(data_record_length(&header), Ok(DATA_RECORD_HEADER_LEN + 1));
 
-        header[24..28].copy_from_slice(&0_u32.to_be_bytes());
+        header[28..32].copy_from_slice(&0_u32.to_be_bytes());
         assert!(matches!(
             data_record_length(&header),
             Err(DataIoError::RecordTooLarge(DATA_RECORD_HEADER_LEN))
         ));
-        header[24..28].copy_from_slice(&(256_u32 * 1024 + 1).to_be_bytes());
+        header[28..32].copy_from_slice(&(256_u32 * 1024 + 1).to_be_bytes());
         assert!(matches!(
             data_record_length(&header),
             Err(DataIoError::RecordTooLarge(_))
         ));
         assert_eq!(
-            data_record_length(&header[..59]),
+            data_record_length(&header[..DATA_RECORD_HEADER_LEN - 1]),
             Err(DataIoError::Truncated)
+        );
+        assert_eq!(
+            data_record_header_length(b"NOPE"),
+            Err(DataIoError::InvalidMagic)
         );
     }
 }

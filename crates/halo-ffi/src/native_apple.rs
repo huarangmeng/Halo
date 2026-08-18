@@ -19,7 +19,7 @@ use crate::{
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 use crate::platform_socket::{
-    disable_lan_endpoint, register_bound_lan_socket, register_user_approved_hotspot_socket,
+    disable_lan_endpoint, register_bound_lan_sockets, register_user_approved_hotspot_sockets,
 };
 
 const STATUS_OK: i32 = 0;
@@ -34,15 +34,23 @@ const ERROR_INTERNAL: i32 = -3;
 /// including when registration fails.
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn halo_apple_lan_register_bound_socket(file_descriptor: i32) -> i32 {
-    if file_descriptor < 0 {
+pub unsafe extern "C" fn halo_apple_lan_register_bound_socket(
+    file_descriptor: i32,
+    discovery_file_descriptor: i32,
+) -> i32 {
+    if file_descriptor < 0 || discovery_file_descriptor < 0 {
+        close_if_transferred(file_descriptor);
+        close_if_transferred(discovery_file_descriptor);
         return ERROR_INVALID_ARGUMENT;
     }
     // SAFETY: Swift passes a newly created descriptor and relinquishes
     // ownership at this call. OwnedFd guarantees exactly-once close if the
     // registry rejects it or replaces a stale prepared endpoint.
     let owned = unsafe { OwnedFd::from_raw_fd(file_descriptor) };
-    match register_bound_lan_socket(UdpSocket::from(owned)) {
+    // SAFETY: Swift transfers a second exclusive descriptor for remembered
+    // direct probes on the same selected interface.
+    let discovery_owned = unsafe { OwnedFd::from_raw_fd(discovery_file_descriptor) };
+    match register_bound_lan_sockets(UdpSocket::from(owned), UdpSocket::from(discovery_owned)) {
         Ok(()) => STATUS_OK,
         Err(()) => ERROR_INTERNAL,
     }
@@ -55,16 +63,32 @@ pub unsafe extern "C" fn halo_apple_lan_register_bound_socket(file_descriptor: i
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn halo_apple_lan_register_user_approved_hotspot_socket(
     file_descriptor: i32,
+    discovery_file_descriptor: i32,
 ) -> i32 {
-    if file_descriptor < 0 {
+    if file_descriptor < 0 || discovery_file_descriptor < 0 {
+        close_if_transferred(file_descriptor);
+        close_if_transferred(discovery_file_descriptor);
         return ERROR_INVALID_ARGUMENT;
     }
     // SAFETY: Swift transfers exclusive ownership of a newly created
     // descriptor under the same contract as the shared-LAN entry point.
     let owned = unsafe { OwnedFd::from_raw_fd(file_descriptor) };
-    match register_user_approved_hotspot_socket(UdpSocket::from(owned)) {
+    // SAFETY: The second descriptor is independently created and transferred.
+    let discovery_owned = unsafe { OwnedFd::from_raw_fd(discovery_file_descriptor) };
+    match register_user_approved_hotspot_sockets(
+        UdpSocket::from(owned),
+        UdpSocket::from(discovery_owned),
+    ) {
         Ok(()) => STATUS_OK,
         Err(()) => ERROR_INTERNAL,
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+fn close_if_transferred(file_descriptor: i32) {
+    if file_descriptor >= 0 {
+        // SAFETY: A nonnegative descriptor was passed for ownership transfer.
+        drop(unsafe { OwnedFd::from_raw_fd(file_descriptor) });
     }
 }
 

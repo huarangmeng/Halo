@@ -71,7 +71,7 @@ mod tests {
     fn ble_presence_uses_shared_strict_codec() {
         let local = LocalPresence::new(
             PresenceId::from_bytes([0x22; 16]),
-            ProtocolRange::new(1, 2).unwrap_or_else(|error| panic!("range: {error}")),
+            ProtocolRange::new(1, 1).unwrap_or_else(|error| panic!("range: {error}")),
             Capabilities::from_bits(7),
             4433,
         )

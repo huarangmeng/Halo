@@ -15,5 +15,6 @@ pub use pairing::{
     verify_client_hello, verify_commit, verify_decision, verify_server_hello,
 };
 pub use store::{
-    FileTrustStore, IdentityBlobStore, PeerId, StoreError, TrustStore, TrustedPeer, derive_peer_id,
+    FileTrustStore, IdentityBlobStore, PeerId, RememberedEndpoint, StoreError, TrustStore,
+    TrustedPeer, derive_peer_id,
 };

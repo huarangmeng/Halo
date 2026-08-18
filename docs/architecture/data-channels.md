@@ -69,22 +69,23 @@ device-validated support:
 - Successful pairing retains the authenticated connection group and its
   exporter binding. The native provider can open or accept additional bounded
   QUIC streams, verifies that each stream exports the same binding, and
-  recognizes the v1 60-byte file-record header with a 256 KiB payload cap.
+  recognizes the v1 64-byte file-record header with a 256 KiB
+  payload cap.
   Rust transfer-service ownership of those streams is not wired yet, so this
   is data-stream foundation rather than a completed file-transfer path.
 - The common LAN pairing path now ends only its pairing stream and retains the
   authenticated Quinn connection in `halo-core`. Each retained session has an
-  opaque session ID. The transfer coordinator serializes one file per session,
-  handles offer/consent/cancellation/completion events, and rejects simultaneous
-  inbound work instead of deadlocking two senders.
-- `halo-transfer` implements the reusable single-file correctness layer:
-  source pre-hashing, bounded chunk records, per-chunk and whole-file SHA-256,
-  conservative cross-platform leaf names, private `create_new` staging,
-  explicit stream-end validation, cancellation cleanup, and hard-link
-  no-overwrite finalization. The FFI and shared Demo now expose LAN send,
-  receive consent, cancellation, and terminal events. Android's document
-  picker and macOS's open panel copy the selected source into private native
-  storage; Dart receives paths and state but never file bytes. A host loopback
+  opaque session ID and negotiated application protocol version. The transfer
+  coordinator serializes one batch per session and handles manifest consent,
+  pause, retry, cancellation, completion, and trust revocation.
+- `halo-transfer` implements the single v1 format with bounded multi-file
+  manifests, ordered chunks, peer-bound durable sender jobs,
+  receiver chunk-prefix state, disk-space admission, whole-file verification,
+  and all-or-rollback no-overwrite finalization. Android's document picker and
+  macOS's open panel copy up to eight selected sources into private native
+  storage; Dart receives paths and state but never file bytes. Remembered
+  endpoint probes use a second socket pinned to the same exact OS network or
+  interface as Quinn. A host loopback
   test passes and Android/macOS Debug artifacts compile. Physical Android ↔
   macOS and Android ↔ Android file transfer are still unverified.
 - Wi-Fi Direct and Wi-Fi Aware platform adapters are not implemented yet.
@@ -137,15 +138,14 @@ session. A change in the process default route does not move it. If the selected
 discovery restart; hot endpoint replacement is not implemented yet.
 
 iOS and macOS now apply the same ownership rule without routing a descriptor
-through Dart. `NWPath` must currently be satisfied, IPv4-capable, non-expensive, and not
-constrained. Swift chooses a Wi-Fi or wired-Ethernet `NWInterface`, creates an
-IPv4 UDP socket, applies `IP_BOUND_IF` with that interface's system index,
-binds an ephemeral port, and transfers the descriptor once through the native
-C ABI into Quinn. Ineligible or failed preparation registers a loopback-only
-listener. If the selected interface changes, capability state requires a
-discovery restart. The current Apple exact-binding path is IPv4-only; IPv6
-interface binding remains a separate validation gate. Windows LAN binding and
-hot endpoint replacement remain pending. Wi-Fi Direct and Wi-Fi Aware will
+through Dart. `NWPath` must be satisfied, IPv4- or IPv6-capable, non-expensive,
+and not constrained. Swift chooses a Wi-Fi or wired-Ethernet `NWInterface`,
+creates dual-stack UDP sockets, applies `IPV6_BOUND_IF` with that interface's
+system index, binds ephemeral ports, and transfers the descriptors once through
+the native C ABI into Quinn and remembered direct discovery. Ineligible or
+failed preparation registers a loopback-only listener. If the selected
+interface changes, capability state requires a discovery restart. Windows LAN
+binding and hot endpoint replacement remain pending. Wi-Fi Direct and Wi-Fi Aware will
 reuse the same owned-socket handoff after their network establishment adapters
 exist.
 It now retries another discovered LAN endpoint after recoverable transport,
@@ -644,18 +644,21 @@ peer ID.
 
 ## Transfer admission and resource policy
 
-The current single-file slice has a product policy below the larger protocol
-limits. Defaults are a 10 GiB maximum file, one active transfer per
-authenticated session, eight retained authenticated sessions, 60 seconds for
-receiver consent, 64 KiB protocol chunks, 256 KiB maximum data records, and
-progress events no more often than each 1 MiB (plus the final byte count).
+The current transfer slice has product policy below protocol limits. Defaults are a
+10 GiB maximum file and aggregate, eight files per manifest, a 64 MiB free-space
+reserve, one active batch per authenticated session, eight retained
+authenticated sessions, 60 seconds for receiver consent, 256 KiB protocol
+chunks, a 16 MiB receiver durability checkpoint interval, 256 KiB maximum
+payloads, and progress events no more often than each 1 MiB (plus the final
+byte count).
 
 The sender applies the size policy after private-source preparation and before
 disclosing an offer. The receiver independently rejects an oversized offer
 before presenting consent. Policy rejection never opens a data stream. Event
-history, pending decisions, candidates, streams, and sessions are all bounded.
-Pause/resume, multi-file scheduling, overwrite choices, and automatic retry are
-not silently emulated; they require later versioned designs.
+history, pending decisions, sender jobs, resume states, candidates, streams,
+and sessions are all bounded. Pause retains synchronized prefixes; cancel
+removes ownership; retry reuses the same manifest only after fresh
+authentication.
 
 ## Delivery gates
 

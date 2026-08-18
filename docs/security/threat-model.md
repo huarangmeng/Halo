@@ -1,18 +1,19 @@
 # Halo security threat model
 
-- Status: Draft for pairing and single-file transfer protocol v1
-- Updated: 2026-08-05
+- Status: Draft for pairing and resumable multi-file transfer v1
+- Updated: 2026-08-17
 
 ## Scope and protected assets
 
 This revision covers discovery, multi-bearer local channel selection, pairing,
-and the experimental single-file transfer slice on a hostile local network.
+and the experimental resumable multi-file transfer on a
+hostile local network.
 The active product matrix is Android ↔ macOS and Android ↔ Android, with
 macOS ↔ macOS as a regression path. iOS/iPadOS and Windows product validation
 is deferred. Cellular, public-Internet, NAT-traversal, and relay transport are
 outside the product boundary and must be rejected.
-Authenticated resumable manifests, multi-file atomicity, and durable resume
-data remain out of scope.
+Authenticated manifests, bounded multi-file finalization, durable receiver
+resume state, and durable sender retry jobs are in scope.
 
 Protected assets are the long-lived device identity key, remembered-peer
 records, the user's pairing decision, peer authenticity, control-message
@@ -78,6 +79,11 @@ sensitive diagnostics.
 | Source changes after consent | Hash the complete private source before the offer, then re-hash while sending and reject size or digest changes | Truncate, append, and replace the selected source after offer creation; receiver must not finalize it |
 | Flutter/native path abuse | File bytes never cross Dart; native pickers copy into app-private outgoing storage, Rust validates file type and destination policy, and native cleanup accepts only canonical `.upload` children of that outgoing directory | Submit arbitrary cleanup and transfer paths through the method channel and verify files outside the private outgoing directory are untouched |
 | Transfer resource exhaustion or consent bypass | Permit one active transfer per authenticated session, cap file/chunk/frame sizes and event queues, require an explicit receive decision with a 60-second timeout, and cancel session work on shutdown | Race simultaneous offers, withhold decisions, send oversized offers, and stop during each state; no transfer proceeds without a current accepted request |
+| Resume-state substitution | Bind receiver state and sender jobs to the complete authenticated peer-key digest, transfer ID, canonical manifest digest, ordered chunk-prefix chain, and checksum; reject symlinks, malformed lengths, sparse maps, and over-limit scans | Replace peer, manifest, partial bytes, chunk map, checksum, source path, or transfer ID and verify resume fails closed without exposing another peer's metadata |
+| Disk exhaustion | Apply per-file, aggregate, file-count, and free-space-reserve admission before acceptance; keep all queues, manifests, source jobs, and resume records bounded | Report insufficient capacity, race capacity changes, send zero/maximum/over-limit values, and verify no final file or unbounded partial allocation occurs |
+| Partial multi-file finalization | Preflight every destination, create only no-overwrite hard links, and rollback only links proven to reference private staging inodes | Pre-create every destination position and fail each link operation; existing files survive and the batch never appears partially completed |
+| Stale trust after revocation | Derive revocation from the authenticated full public key and remove both trust and validated endpoint-binding records before closing the session | Revoke one of multiple peers, restart, direct-probe remembered addresses, and verify only the selected key requires first-contact verification again |
+| Remembered-probe route escape | Enumerate only validated app-private endpoint records and send probes through a second native socket pinned to the same eligible Android `Network` or Apple interface as QUIC | Make cellular/VPN the default route, remove the selected LAN, and verify no direct probe uses a wildcard or migrated path |
 | Premature bearer winner | A candidate wins only after eligible-path validation, QUIC, exporter-bound Halo authentication, and peer correlation all succeed | Make the fastest association fail authentication and verify a slower valid bearer wins without metadata disclosure |
 | Prompt amplification | Race automatic candidates first; serialize candidates that require system UI, cap the default prompt budget at one, and allow only one active outbound ceremony per discovery reference | Supply many Direct/Aware/P2P candidates and duplicate connect requests; verify at most one ceremony/system-action attempt begins for that peer |
 | Duplicate authenticated sessions | Deduplicate retained connections by cryptographic peer ID rather than name, address, or discovery reference | Complete concurrent or repeated authentication for the same key; retain one session and one transfer listener without consuming extra capacity |
@@ -119,6 +125,13 @@ sensitive diagnostics.
 14. A hotspot may be reported as metered or expensive without becoming a
     cellular path. It is eligible only after explicit user action, exact Wi-Fi
     binding, local reachability verification, and fresh Halo authentication.
+15. Resume state is valid only for the complete authenticated peer key and
+    canonical manifest. A route or process restart requires fresh Halo
+    authentication before any position is disclosed.
+16. Cancel removes receiver resume state and sender retry ownership. Pause
+    retains only synchronized chunk prefixes and verified private source jobs.
+17. Multi-file finalization never leaves a successful partial batch; rollback
+    removes only links proven to reference staging files created for that batch.
 
 ## Residual risks and required device validation
 
@@ -140,17 +153,20 @@ sensitive diagnostics.
 - The Android Demo transfers a UDP socket bound to an eligible Android `Network`
   directly into Quinn. Automatic shared LAN still requires `NOT_METERED`.
   A hotspot join is admitted only after foreground user action through
-  `WifiNetworkSpecifier`, when the selected Wi-Fi `Network` has no Internet or
-  VPN capability, and it is registered with the distinct user-approved scope.
-  If native preparation is absent,
+  `WifiNetworkSpecifier`, when the selected Wi-Fi `Network` is non-VPN and
+  registered with the distinct user-approved scope. A hotspot uplink never
+  makes public endpoints eligible.
+  A second socket bound to the same exact `Network` carries remembered direct
+  probes. If native preparation is absent,
   ineligible, or fails, Android uses a loopback-only listener rather than a
   wildcard fallback. A default-route change cannot migrate the socket; if the
   selected Android `Network` disappears or becomes ineligible, the UI requires
-  a discovery restart. Apple transfers an IPv4 UDP socket only after Swift
-  applies `IP_BOUND_IF`. Automatic LAN requires a non-expensive, unconstrained
-  Wi-Fi/Ethernet interface; macOS can separately authorize the current Wi-Fi as
-  a hotspot scope. Failure registers a loopback-only listener. Apple
-  IPv6 and Windows still need equivalent exact-interface adapters. Every
+  a discovery restart. Apple transfers dual-stack QUIC and direct-probe UDP
+  sockets only after Swift applies `IPV6_BOUND_IF`. Automatic LAN requires a
+  non-expensive, unconstrained Wi-Fi/Ethernet interface; macOS can separately
+  authorize the current Wi-Fi as a hotspot scope. Failure registers a
+  loopback-only listener. Windows still needs an equivalent exact-interface
+  adapter. Every
   platform's no-cellular guarantee remains a physical-device validation gate.
 - Android hotspot credentials are collected in a native dialog and never cross
   Dart, discovery, Rust, or logs. Android framework APIs require immutable

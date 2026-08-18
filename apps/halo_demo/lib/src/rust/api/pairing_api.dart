@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `core_error`, `pairing_error`, `pairing_sessions`, `transfer_error`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PairingSession`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 Future<PairingBootstrap> pairingStart({
   Uint8List? identityBlob,
@@ -96,6 +96,33 @@ Future<List<AuthenticatedSessionInfo>> pairingAuthenticatedSessions({
   sessionId: sessionId,
 );
 
+Future<List<String>> pairingRememberedEndpointAddresses({
+  required BigInt sessionId,
+}) => HaloRustLib.instance.api
+    .crateApiPairingApiPairingRememberedEndpointAddresses(sessionId: sessionId);
+
+Future<List<RememberedPeerInfo>> pairingRememberedPeers({
+  required BigInt sessionId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingRememberedPeers(
+  sessionId: sessionId,
+);
+
+Future<void> pairingRevokeRememberedPeer({
+  required BigInt sessionId,
+  required String handle,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingRevokeRememberedPeer(
+  sessionId: sessionId,
+  handle: handle,
+);
+
+Future<void> pairingRevokeAuthenticatedPeer({
+  required BigInt sessionId,
+  required BigInt authenticatedSessionId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingRevokeAuthenticatedPeer(
+  sessionId: sessionId,
+  authenticatedSessionId: authenticatedSessionId,
+);
+
 Future<void> pairingRespond({
   required BigInt sessionId,
   required BigInt requestId,
@@ -118,6 +145,16 @@ Future<String> pairingTransferSendFile({
   advertisedName: advertisedName,
 );
 
+Future<String> pairingTransferSendFiles({
+  required BigInt sessionId,
+  required BigInt authenticatedSessionId,
+  required List<TransferFileSource> sources,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferSendFiles(
+  sessionId: sessionId,
+  authenticatedSessionId: authenticatedSessionId,
+  sources: sources,
+);
+
 Future<List<TransferEvent>> pairingTransferEvents({
   required BigInt sessionId,
   required BigInt afterEventId,
@@ -132,12 +169,32 @@ Future<void> pairingTransferRespond({
   required bool accepted,
   String? stagingDirectory,
   String? destinationDirectory,
+  BigInt? availableBytes,
 }) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferRespond(
   sessionId: sessionId,
   requestId: requestId,
   accepted: accepted,
   stagingDirectory: stagingDirectory,
   destinationDirectory: destinationDirectory,
+  availableBytes: availableBytes,
+);
+
+Future<void> pairingTransferPause({
+  required BigInt sessionId,
+  required String transferId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferPause(
+  sessionId: sessionId,
+  transferId: transferId,
+);
+
+Future<String> pairingTransferRetry({
+  required BigInt sessionId,
+  required BigInt authenticatedSessionId,
+  required String transferId,
+}) => HaloRustLib.instance.api.crateApiPairingApiPairingTransferRetry(
+  sessionId: sessionId,
+  authenticatedSessionId: authenticatedSessionId,
+  transferId: transferId,
 );
 
 Future<void> pairingTransferCancel({
@@ -147,6 +204,15 @@ Future<void> pairingTransferCancel({
   sessionId: sessionId,
   transferId: transferId,
 );
+
+Future<List<String>> pairingTransferTakeFinishedSources({
+  required BigInt sessionId,
+  required String transferId,
+}) => HaloRustLib.instance.api
+    .crateApiPairingApiPairingTransferTakeFinishedSources(
+      sessionId: sessionId,
+      transferId: transferId,
+    );
 
 Future<void> pairingStop({required BigInt sessionId}) => HaloRustLib
     .instance
@@ -268,6 +334,7 @@ enum PairingEventKind {
   cancelled,
   failed,
   disconnected,
+  revoked,
 }
 
 enum PlatformPairingChannelState { pending, authenticated, failed }
@@ -295,6 +362,31 @@ class PlatformTlsIdentity {
           privateKeyX963 == other.privateKeyX963;
 }
 
+class RememberedPeerInfo {
+  final String handle;
+  final String fingerprint;
+  final BigInt? activeSessionId;
+
+  const RememberedPeerInfo({
+    required this.handle,
+    required this.fingerprint,
+    this.activeSessionId,
+  });
+
+  @override
+  int get hashCode =>
+      handle.hashCode ^ fingerprint.hashCode ^ activeSessionId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RememberedPeerInfo &&
+          runtimeType == other.runtimeType &&
+          handle == other.handle &&
+          fingerprint == other.fingerprint &&
+          activeSessionId == other.activeSessionId;
+}
+
 enum TransferDirection { sending, receiving }
 
 class TransferEvent {
@@ -305,8 +397,13 @@ class TransferEvent {
   final TransferDirection direction;
   final TransferEventKind kind;
   final String fileName;
+  final List<String> fileNames;
+  final Uint64List fileSizes;
   final BigInt fileSize;
   final BigInt transferredBytes;
+  final int completedFiles;
+  final int? currentFileIndex;
+  final bool resumable;
   final String? finalPath;
   final String? detail;
 
@@ -318,8 +415,13 @@ class TransferEvent {
     required this.direction,
     required this.kind,
     required this.fileName,
+    required this.fileNames,
+    required this.fileSizes,
     required this.fileSize,
     required this.transferredBytes,
+    required this.completedFiles,
+    this.currentFileIndex,
+    required this.resumable,
     this.finalPath,
     this.detail,
   });
@@ -333,8 +435,13 @@ class TransferEvent {
       direction.hashCode ^
       kind.hashCode ^
       fileName.hashCode ^
+      fileNames.hashCode ^
+      fileSizes.hashCode ^
       fileSize.hashCode ^
       transferredBytes.hashCode ^
+      completedFiles.hashCode ^
+      currentFileIndex.hashCode ^
+      resumable.hashCode ^
       finalPath.hashCode ^
       detail.hashCode;
 
@@ -350,8 +457,13 @@ class TransferEvent {
           direction == other.direction &&
           kind == other.kind &&
           fileName == other.fileName &&
+          fileNames == other.fileNames &&
+          fileSizes == other.fileSizes &&
           fileSize == other.fileSize &&
           transferredBytes == other.transferredBytes &&
+          completedFiles == other.completedFiles &&
+          currentFileIndex == other.currentFileIndex &&
+          resumable == other.resumable &&
           finalPath == other.finalPath &&
           detail == other.detail;
 }
@@ -362,6 +474,25 @@ enum TransferEventKind {
   transferring,
   completed,
   rejected,
+  paused,
   cancelled,
   failed,
+}
+
+class TransferFileSource {
+  final String sourcePath;
+  final String? advertisedName;
+
+  const TransferFileSource({required this.sourcePath, this.advertisedName});
+
+  @override
+  int get hashCode => sourcePath.hashCode ^ advertisedName.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransferFileSource &&
+          runtimeType == other.runtimeType &&
+          sourcePath == other.sourcePath &&
+          advertisedName == other.advertisedName;
 }

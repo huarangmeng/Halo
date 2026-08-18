@@ -2,7 +2,7 @@
 import Foundation
 
 public enum HaloAppleQuicDataProtocol {
-    public static let recordHeaderLength = 60
+    public static let recordHeaderLength = 64
     public static let maximumPayloadLength = 256 * 1_024
     public static let maximumRecordLength = recordHeaderLength + maximumPayloadLength
 }
@@ -19,14 +19,21 @@ public enum HaloAppleQuicDataError: Error, Equatable {
 }
 
 func haloAppleDataRecordLength(header: Data) throws -> Int {
+    guard header.prefix(4) == Data("HDF1".utf8) else {
+        throw HaloAppleQuicDataError.invalidRecordLength(header.count)
+    }
     guard header.count == HaloAppleQuicDataProtocol.recordHeaderLength else {
         throw HaloAppleQuicDataError.truncated
     }
-    let payloadLength = header[24 ..< 28].reduce(0) { partial, byte in
+    let payloadOffset = 28
+    guard header.count >= payloadOffset + 4 else {
+        throw HaloAppleQuicDataError.truncated
+    }
+    let payloadLength = header[payloadOffset ..< payloadOffset + 4].reduce(0) { partial, byte in
         (partial << 8) | Int(byte)
     }
     let (recordLength, overflow) =
-        HaloAppleQuicDataProtocol.recordHeaderLength.addingReportingOverflow(payloadLength)
+        header.count.addingReportingOverflow(payloadLength)
     guard !overflow,
           payloadLength <= HaloAppleQuicDataProtocol.maximumPayloadLength,
           recordLength <= HaloAppleQuicDataProtocol.maximumRecordLength
@@ -65,11 +72,10 @@ public actor HaloAppleQuicDataStream {
     public func sendRecord(_ record: Data) async throws {
         guard !isClosed else { throw HaloAppleQuicDataError.closed }
         guard !sending else { throw HaloAppleQuicDataError.concurrentOperation }
-        guard record.count >= HaloAppleQuicDataProtocol.recordHeaderLength,
+        let headerLength = try recordHeaderLength(record.prefix(4))
+        guard record.count >= headerLength,
               record.count <= HaloAppleQuicDataProtocol.maximumRecordLength,
-              try haloAppleDataRecordLength(
-                  header: record.prefix(HaloAppleQuicDataProtocol.recordHeaderLength)
-              ) == record.count
+              try haloAppleDataRecordLength(header: record.prefix(headerLength)) == record.count
         else {
             throw HaloAppleQuicDataError.invalidRecordLength(record.count)
         }
@@ -96,15 +102,26 @@ public actor HaloAppleQuicDataStream {
         guard !receiving else { throw HaloAppleQuicDataError.concurrentOperation }
         receiving = true
         defer { receiving = false }
-        let header = try await receiveExactly(HaloAppleQuicDataProtocol.recordHeaderLength)
+        let magic = try await receiveExactly(4)
+        let headerLength = try recordHeaderLength(magic)
+        var header = Data(capacity: headerLength)
+        header.append(magic)
+        header.append(try await receiveExactly(headerLength - magic.count))
         let recordLength = try haloAppleDataRecordLength(header: header)
-        let payloadLength = recordLength - HaloAppleQuicDataProtocol.recordHeaderLength
+        let payloadLength = recordLength - headerLength
         if payloadLength == 0 { return header }
         let payload = try await receiveExactly(payloadLength)
         var record = Data(capacity: recordLength)
         record.append(header)
         record.append(payload)
         return record
+    }
+
+    private func recordHeaderLength(_ magic: Data) throws -> Int {
+        guard magic == Data("HDF1".utf8) else {
+            throw HaloAppleQuicDataError.invalidRecordLength(magic.count)
+        }
+        return HaloAppleQuicDataProtocol.recordHeaderLength
     }
 
     public func close() {

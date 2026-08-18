@@ -44,6 +44,12 @@
   "pairingTimedOut": "Pairing timed out",
   "pairingFailed": "Secure pairing failed",
   "pairingDisconnected": "Secure connection ended",
+  "pairingRevoked": "Device trust removed",
+  "pairingForget": "Forget device",
+  "pairingForgetTitle": "Forget this device?",
+  "pairingForgetDescription": "Halo will remove this device key and remembered network bindings. A future connection requires code verification again.",
+  "pairingForgetConfirm": "Forget",
+  "pairingForgetCancel": "Keep device",
   "pairingAccept": "Codes match — accept",
   "pairingReject": "Reject",
   "connectionFailureTimeout": "Connection timed out before the peer responded.",
@@ -131,6 +137,14 @@
   "diagnosticsProviders": "Provider health",
   "diagnosticsNoProviders": "Start discovery to inspect provider health.",
   "diagnosticsRecentEvents": "Recent native BLE events",
+  "diagnosticsTrustedDevices": "Trusted devices",
+  "diagnosticsNoTrustedDevices": "No devices are remembered.",
+  "diagnosticsTrustedDeviceDescription": "Fingerprint {fingerprint}",
+  "@diagnosticsTrustedDeviceDescription": {
+    "placeholders": {
+      "fingerprint": {"type": "String"}
+    }
+  },
   "diagnosticsNoEvents": "No native BLE errors have been reported.",
   "discoveryStatusSemantics": "Discovery status: {status}",
   "@discoveryStatusSemantics": {
@@ -200,6 +214,7 @@
   "providerPresenceV4": "IPv4 Presence",
   "providerPresenceV6": "IPv6 Presence",
   "transferIncomingTitle": "Incoming file",
+  "transferIncomingBatchTitle": "Incoming files",
   "transferOfferDescription": "{name} · {size}",
   "@transferOfferDescription": {
     "placeholders": {
@@ -207,17 +222,51 @@
       "size": {"type": "String"}
     }
   },
+  "transferBatchOfferDescription": "{count} files · {size}",
+  "@transferBatchOfferDescription": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "size": {"type": "String"}
+    }
+  },
   "transferAccept": "Accept file",
+  "transferAcceptBatch": "Accept files",
   "transferReject": "Reject",
   "transferSendFile": "Send file",
+  "transferSendFiles": "Send files",
   "transferLanOnly": "Files use the authenticated local QUIC connection; BLE carries no file bytes.",
   "transferAwaitingDecision": "Waiting for the receiver",
   "transferTransferring": "Transferring",
   "transferCompleted": "Transfer complete",
   "transferRejected": "Transfer rejected",
+  "transferPaused": "Transfer paused",
   "transferCancelled": "Transfer cancelled",
   "transferFailed": "Transfer failed",
+  "transferPause": "Pause transfer",
+  "transferRetry": "Retry transfer",
   "transferCancel": "Cancel transfer",
+  "transferFilesProgress": "{completed} of {total} files complete",
+  "@transferFilesProgress": {
+    "placeholders": {
+      "completed": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "transferErrorInsufficientSpace": "Not enough free space is available at the destination.",
+  "transferErrorDestinationExists": "A file with this name already exists. Halo did not overwrite it.",
+  "transferErrorIntegrity": "File verification failed. No final file was created.",
+  "transferErrorSourceChanged": "A selected source changed after the offer. Select it again.",
+  "transferErrorResume": "Saved resume data no longer matches this peer or file list.",
+  "transferErrorNetwork": "The authenticated local connection ended. Reconnect to resume.",
+  "transferErrorProtocol": "The peer sent an incompatible transfer message.",
+  "transferErrorStorage": "Private transfer storage is unavailable.",
+  "transferErrorInvalidName": "A selected filename is not safe on all supported platforms.",
+  "transferErrorDuplicateName": "The file list contains duplicate destination names.",
+  "transferRetrying": "Retrying on the authenticated connection.",
+  "transferErrorUnknown": "Transfer failed ({detail}).",
+  "@transferErrorUnknown": {
+    "placeholders": {"detail": {"type": "String"}}
+  },
   "transferReceivedAt": "Saved in private app storage: {path}",
   "@transferReceivedAt": {
     "placeholders": {"path": {"type": "String"}}

@@ -1,114 +1,162 @@
-# Halo single-file transfer protocol v1
+# Halo resumable multi-file transfer protocol v1
 
 - Status: Experimental
-- Wire version: 1
+- Application protocol version: 1
+- Control frame limit: 4096 bytes
 
-This protocol runs only after pairing has authenticated both device identities
-on the same QUIC connection. QUIC 0-RTT is disabled. One control stream carries
-the offer and decision; a separate data stream carries bounded file chunks.
+Transfer v1 runs only on a QUIC connection authenticated by Halo pairing that
+negotiated application protocol version 1.
 
 ## Limits
 
 | Item | v1 limit |
 | --- | ---: |
+| Files per manifest | 8 |
 | UTF-8 filename | 255 bytes |
-| File size | 10 TiB |
-| Chunk payload | 256 KiB maximum; 64 KiB default |
-| Active transfers | one per authenticated session |
-| Control frame | 4096 bytes including the common header |
-| Data-record header | 60 bytes |
+| Per-file size | 10 TiB |
+| Aggregate size | 10 TiB |
+| Chunk payload | 256 KiB maximum and current sender default |
+| Active batches | one per authenticated session |
 
-## Common control header
+All integers are unsigned and big-endian. Control frames use the common
+12-byte `HALO` header with wire version `1` and zero flags.
 
-Transfer control messages reuse the deterministic Halo header:
+## Canonical manifest digest
+
+The SHA-256 input is:
 
 ```text
-magic[4] = "HALO"
-wire_version: u16 big-endian = 1
-kind: u8
-flags: u8 = 0
-payload_length: u32 big-endian
-payload[payload_length]
+"Halo Transfer Manifest v1"
+transfer_id[16]
+chunk_size: u32
+file_count: u8
+for each file in order:
+  file_size: u64
+  file_digest[32]
+  filename_length: u16
+  filename[filename_length]
 ```
 
-Unknown kinds, non-zero flags, unsupported versions, length mismatches, and
-over-limit frames are fatal for the transfer stream.
+The ordered digest binds every resume request and terminal message.
+
+Golden manifest digest: transfer ID `11` repeated 16 times, chunk size 65536,
+and files `(7, 21*32, "first.txt")`, `(9, 22*32, "second.bin")` produce:
+
+```text
+f7a79061ca4c5852e1d1a963286bec8355bc686b986522a8f5ef9f69a6ca3407
+```
 
 ## Control messages
 
-All integers are big-endian. `transfer_id` is 16 unpredictable bytes generated
-by the sender. Digests are 32-byte SHA-256 values.
-
-### Offer (`kind = 16`)
+### Offer (`kind = 32`)
 
 ```text
 transfer_id[16]
-file_size: u64
 chunk_size: u32
-file_digest[32]
-filename_length: u16
-filename[filename_length]  // strict UTF-8 leaf name
+file_count: u8
+reserved[3] = 0
+aggregate_size: u64
+manifest_digest[32]
+for each file:
+  file_size: u64
+  file_digest[32]
+  filename_length: u16
+  filename[filename_length]
 ```
 
-### Decision (`kind = 17`)
+The decoder recomputes aggregate size and manifest digest. Duplicate or unsafe
+leaf names are rejected by the transfer engine before consent.
+
+### Decision (`kind = 33`)
 
 ```text
 transfer_id[16]
-accepted: u8               // exactly 0 or 1
+manifest_digest[32]
+accepted: u8
+position_count: u8
+reserved: u16 = 0
+for each position:
+  file_index: u16
+  next_chunk_index: u32
 ```
 
-### Complete (`kind = 18`)
+An accepted decision contains one ordered position per manifest file. A new
+transfer uses zero for every position. A rejected decision has no positions.
+Positions beyond a file's exact chunk count are fatal.
+
+### Complete (`kind = 34`)
 
 ```text
 transfer_id[16]
-file_digest[32]
+manifest_digest[32]
 ```
 
-`Complete` is sent by the receiver only after durable chunk writes, whole-file
-verification, and successful no-overwrite finalization.
+The receiver sends Complete only after all files pass chunk and whole-file
+verification and no-overwrite finalization.
 
-### Cancel (`kind = 19`)
+### Cancel (`kind = 35`)
 
 ```text
 transfer_id[16]
 reason: u8
 ```
 
-Reason values are stable categories: `1` user cancellation, `2` policy, `3`
-integrity, `4` storage, and `5` protocol. Unknown reason values are rejected.
+Reasons are `1=user`, `2=policy`, `3=integrity`, `4=storage`, and `5=protocol`.
+Cancel removes receiver partial state owned by this transfer.
 
-## Data stream
+### Pause (`kind = 36`)
 
-The accepted sender opens one data stream. It contains consecutive chunk
-records and no padding:
+```text
+transfer_id[16]
+manifest_digest[32]
+reason: u8
+```
+
+Reasons are `1=user`, `2=route lost`, and `3=application lifecycle`. Pause
+retains only already synchronized and verified partial state. Resuming requires
+a new authenticated session when the old route or connection was lost.
+
+## Data records
+
+Accepted senders write ordered records with a 64-byte header:
 
 ```text
 magic[4] = "HDF1"
 transfer_id[16]
+file_index: u16
+reserved: u16 = 0
 chunk_index: u32
 payload_length: u32
 chunk_digest[32]
 payload[payload_length]
 ```
 
-All integer fields are big-endian. The receiver reads and validates the fixed
-60-byte header before allocating the payload. `payload_length` must be in
-`1..=262144`, and the complete record must be exactly
-`60 + payload_length` bytes; trailing bytes are not part of that record.
+Records start at the receiver-provided position for each file. File indices are
+in manifest order. Chunk indices are contiguous. Every non-final payload equals
+the manifest chunk size; the final payload is the exact remainder. Files whose
+position equals their chunk count send no records.
 
-The first index is zero and indices are contiguous. Every non-final chunk must
-match the offered chunk size; the final chunk is exactly the remaining byte
-count. Zero-length files contain no chunk records. Extra, missing, reordered,
-oversized, or digest-mismatched records fail the transfer.
+The receiver validates every chunk before writing it. It synchronizes private
+partial data before atomically advancing durable resume state at 16 MiB
+checkpoints and at every file boundary. Missing, duplicate, reordered,
+appended, mismatched, or over-limit data fails the batch. An abrupt process or
+power loss may require retransmitting at most the uncommitted 16 MiB suffix;
+resume loading truncates that suffix before advertising a position. Every
+completed whole-file digest is verified before finalization.
 
 ## State machine
 
 ```text
-sender:   Offer -> Decision(accept) -> chunks -> wait Complete
-receiver: Offer -> user/policy decision -> Decision(accept) -> chunks
-          -> verify -> finalize -> Complete
+sender:   Offer -> Decision(accept + positions) -> records
+          -> Complete
+receiver: Offer -> consent/policy -> Decision -> records
+          -> verify all -> finalize all -> Complete
+
+either side after acceptance:
+          -> Pause (retain verified private state)
+          -> Cancel (remove private state)
 ```
 
-A rejection ends the control stream without a data stream. Cancellation or any
-error closes the affected streams and removes partial staging state. It never
-creates or replaces a final destination file.
+Rejection, cancellation, timeout, malformed state, or failed finalization never
+overwrites an existing destination. Resume state is scoped to the complete
+authenticated peer key, transfer ID, and manifest digest.

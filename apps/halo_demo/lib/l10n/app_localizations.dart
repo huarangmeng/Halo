@@ -326,6 +326,42 @@ abstract class AppLocalizations {
   /// **'Secure connection ended'**
   String get pairingDisconnected;
 
+  /// No description provided for @pairingRevoked.
+  ///
+  /// In en, this message translates to:
+  /// **'Device trust removed'**
+  String get pairingRevoked;
+
+  /// No description provided for @pairingForget.
+  ///
+  /// In en, this message translates to:
+  /// **'Forget device'**
+  String get pairingForget;
+
+  /// No description provided for @pairingForgetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Forget this device?'**
+  String get pairingForgetTitle;
+
+  /// No description provided for @pairingForgetDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Halo will remove this device key and remembered network bindings. A future connection requires code verification again.'**
+  String get pairingForgetDescription;
+
+  /// No description provided for @pairingForgetConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Forget'**
+  String get pairingForgetConfirm;
+
+  /// No description provided for @pairingForgetCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep device'**
+  String get pairingForgetCancel;
+
   /// No description provided for @pairingAccept.
   ///
   /// In en, this message translates to:
@@ -830,6 +866,24 @@ abstract class AppLocalizations {
   /// **'Recent native BLE events'**
   String get diagnosticsRecentEvents;
 
+  /// No description provided for @diagnosticsTrustedDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Trusted devices'**
+  String get diagnosticsTrustedDevices;
+
+  /// No description provided for @diagnosticsNoTrustedDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'No devices are remembered.'**
+  String get diagnosticsNoTrustedDevices;
+
+  /// No description provided for @diagnosticsTrustedDeviceDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Fingerprint {fingerprint}'**
+  String diagnosticsTrustedDeviceDescription(String fingerprint);
+
   /// No description provided for @diagnosticsNoEvents.
   ///
   /// In en, this message translates to:
@@ -1064,17 +1118,35 @@ abstract class AppLocalizations {
   /// **'Incoming file'**
   String get transferIncomingTitle;
 
+  /// No description provided for @transferIncomingBatchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming files'**
+  String get transferIncomingBatchTitle;
+
   /// No description provided for @transferOfferDescription.
   ///
   /// In en, this message translates to:
   /// **'{name} · {size}'**
   String transferOfferDescription(String name, String size);
 
+  /// No description provided for @transferBatchOfferDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} files · {size}'**
+  String transferBatchOfferDescription(int count, String size);
+
   /// No description provided for @transferAccept.
   ///
   /// In en, this message translates to:
   /// **'Accept file'**
   String get transferAccept;
+
+  /// No description provided for @transferAcceptBatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept files'**
+  String get transferAcceptBatch;
 
   /// No description provided for @transferReject.
   ///
@@ -1087,6 +1159,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Send file'**
   String get transferSendFile;
+
+  /// No description provided for @transferSendFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Send files'**
+  String get transferSendFiles;
 
   /// No description provided for @transferLanOnly.
   ///
@@ -1118,6 +1196,12 @@ abstract class AppLocalizations {
   /// **'Transfer rejected'**
   String get transferRejected;
 
+  /// No description provided for @transferPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer paused'**
+  String get transferPaused;
+
   /// No description provided for @transferCancelled.
   ///
   /// In en, this message translates to:
@@ -1130,11 +1214,101 @@ abstract class AppLocalizations {
   /// **'Transfer failed'**
   String get transferFailed;
 
+  /// No description provided for @transferPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause transfer'**
+  String get transferPause;
+
+  /// No description provided for @transferRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry transfer'**
+  String get transferRetry;
+
   /// No description provided for @transferCancel.
   ///
   /// In en, this message translates to:
   /// **'Cancel transfer'**
   String get transferCancel;
+
+  /// No description provided for @transferFilesProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{completed} of {total} files complete'**
+  String transferFilesProgress(int completed, int total);
+
+  /// No description provided for @transferErrorInsufficientSpace.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough free space is available at the destination.'**
+  String get transferErrorInsufficientSpace;
+
+  /// No description provided for @transferErrorDestinationExists.
+  ///
+  /// In en, this message translates to:
+  /// **'A file with this name already exists. Halo did not overwrite it.'**
+  String get transferErrorDestinationExists;
+
+  /// No description provided for @transferErrorIntegrity.
+  ///
+  /// In en, this message translates to:
+  /// **'File verification failed. No final file was created.'**
+  String get transferErrorIntegrity;
+
+  /// No description provided for @transferErrorSourceChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'A selected source changed after the offer. Select it again.'**
+  String get transferErrorSourceChanged;
+
+  /// No description provided for @transferErrorResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved resume data no longer matches this peer or file list.'**
+  String get transferErrorResume;
+
+  /// No description provided for @transferErrorNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'The authenticated local connection ended. Reconnect to resume.'**
+  String get transferErrorNetwork;
+
+  /// No description provided for @transferErrorProtocol.
+  ///
+  /// In en, this message translates to:
+  /// **'The peer sent an incompatible transfer message.'**
+  String get transferErrorProtocol;
+
+  /// No description provided for @transferErrorStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Private transfer storage is unavailable.'**
+  String get transferErrorStorage;
+
+  /// No description provided for @transferErrorInvalidName.
+  ///
+  /// In en, this message translates to:
+  /// **'A selected filename is not safe on all supported platforms.'**
+  String get transferErrorInvalidName;
+
+  /// No description provided for @transferErrorDuplicateName.
+  ///
+  /// In en, this message translates to:
+  /// **'The file list contains duplicate destination names.'**
+  String get transferErrorDuplicateName;
+
+  /// No description provided for @transferRetrying.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrying on the authenticated connection.'**
+  String get transferRetrying;
+
+  /// No description provided for @transferErrorUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer failed ({detail}).'**
+  String transferErrorUnknown(String detail);
 
   /// No description provided for @transferReceivedAt.
   ///

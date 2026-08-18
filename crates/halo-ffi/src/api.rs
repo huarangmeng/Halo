@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    net::IpAddr,
     sync::{
         Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
@@ -9,6 +10,8 @@ use std::{
 use halo_core::{DiscoveryConfig, DiscoveryError, DiscoveryService};
 use thiserror::Error;
 use tokio::runtime::{Builder, Runtime};
+
+use crate::platform_socket::{RegisteredDiscoveryEndpoint, take_discovery_endpoint};
 
 pub mod pairing_api;
 pub use pairing_api::*;
@@ -90,6 +93,7 @@ pub fn discovery_start(
     quic_port: u16,
     enable_lan: bool,
     device_type: DiscoveryDeviceType,
+    remembered_endpoint_addresses: Vec<String>,
 ) -> Result<DiscoveryBootstrap, HaloApiError> {
     let runtime = Builder::new_multi_thread()
         .worker_threads(2)
@@ -97,7 +101,18 @@ pub fn discovery_start(
         .thread_name("halo-discovery")
         .build()
         .map_err(core_error)?;
-    let config = DiscoveryConfig::new(quic_port, device_type.into()).with_lan(enable_lan);
+    let remembered_endpoints = remembered_endpoint_addresses
+        .into_iter()
+        .filter_map(|address| address.parse::<IpAddr>().ok())
+        .map(|address| (address, 1).into())
+        .collect::<Vec<_>>();
+    let mut config = DiscoveryConfig::new(quic_port, device_type.into()).with_lan(enable_lan);
+    match take_discovery_endpoint().map_err(|()| HaloApiError::InternalState)? {
+        Some(RegisteredDiscoveryEndpoint::Bound(socket)) => {
+            config = config.with_direct_probe(socket, remembered_endpoints);
+        }
+        Some(RegisteredDiscoveryEndpoint::Disabled) | None => {}
+    }
     let (service, startup) = runtime
         .block_on(DiscoveryService::start(config))
         .map_err(discovery_error)?;
@@ -296,7 +311,7 @@ mod tests {
 
     #[test]
     fn adapter_starts_and_reads_empty_snapshot() {
-        let bootstrap = discovery_start(44_330, false, DiscoveryDeviceType::Macos)
+        let bootstrap = discovery_start(44_330, false, DiscoveryDeviceType::Macos, Vec::new())
             .unwrap_or_else(|error| panic!("start: {error}"));
         assert!(!bootstrap.presence_id.is_empty());
         assert_eq!(bootstrap.device_type, DiscoveryDeviceType::Macos);
@@ -310,7 +325,7 @@ mod tests {
 
     #[test]
     fn malformed_native_bytes_are_rejected_by_core() {
-        let bootstrap = discovery_start(44_331, false, DiscoveryDeviceType::Android)
+        let bootstrap = discovery_start(44_331, false, DiscoveryDeviceType::Android, Vec::new())
             .unwrap_or_else(|error| panic!("start: {error}"));
         assert!(
             discovery_submit_ble(bootstrap.session_id, "macos".to_owned(), vec![0; 58],).is_err()
@@ -320,7 +335,7 @@ mod tests {
 
     #[test]
     fn provider_health_crosses_thin_adapter() {
-        let bootstrap = discovery_start(44_332, false, DiscoveryDeviceType::Ios)
+        let bootstrap = discovery_start(44_332, false, DiscoveryDeviceType::Ios, Vec::new())
             .unwrap_or_else(|error| panic!("start: {error}"));
         discovery_report_ble_state(
             bootstrap.session_id,

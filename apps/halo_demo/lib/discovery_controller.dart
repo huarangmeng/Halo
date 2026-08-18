@@ -77,6 +77,7 @@ class DiscoveryController extends ChangeNotifier {
   List<DiscoveryDiagnosticEntry> diagnostics = const [];
   List<PairingEvent> pairingActivity = const [];
   List<AuthenticatedSessionInfo> authenticatedLanSessions = const [];
+  List<RememberedPeerInfo> rememberedPeers = const [];
   List<TransferEvent> transferActivity = const [];
 
   final String platform;
@@ -94,7 +95,9 @@ class DiscoveryController extends ChangeNotifier {
   bool _refreshing = false;
   final Set<BigInt> _respondedPairingRequests = <BigInt>{};
   final Set<BigInt> _respondedTransferRequests = <BigInt>{};
-  final Map<String, String> _outgoingSourcesByTransfer = <String, String>{};
+  final Map<String, List<String>> _outgoingSourcesByTransfer =
+      <String, List<String>>{};
+  final Set<String> _resumableOutgoingTransfers = <String>{};
   final Map<String, String> _appleP2PCandidatesByPresence = <String, String>{};
   final Set<String> _authenticatedAppleP2PSessions = <String>{};
 
@@ -213,6 +216,7 @@ class DiscoveryController extends ChangeNotifier {
     providerStatuses = const [];
     diagnostics = const [];
     pairingActivity = const [];
+    rememberedPeers = const [];
     transferActivity = const [];
     _lastPairingEventId = BigInt.zero;
     _lastTransferEventId = BigInt.zero;
@@ -302,10 +306,14 @@ class DiscoveryController extends ChangeNotifier {
           'blob': newIdentityBlob,
         });
       }
+      final rememberedEndpoints = await pairingRememberedEndpointAddresses(
+        sessionId: pairingBootstrap.sessionId,
+      );
       final bootstrap = await discoveryStart(
         quicPort: pairingBootstrap.listenPort,
         enableLan: true,
         deviceType: platformDeviceType,
+        rememberedEndpointAddresses: rememberedEndpoints,
       );
       _sessionId = bootstrap.sessionId;
       localPresenceId = bootstrap.presenceId;
@@ -367,10 +375,12 @@ class DiscoveryController extends ChangeNotifier {
     await _startOperation;
     final sessionId = _sessionId;
     final pairingSessionId = _pairingSessionId;
-    final outgoingSources = _outgoingSourcesByTransfer.values.toList(
-      growable: false,
-    );
+    final outgoingSources = _outgoingSourcesByTransfer.entries
+        .where((entry) => !_resumableOutgoingTransfers.contains(entry.key))
+        .expand((entry) => entry.value)
+        .toList(growable: false);
     _outgoingSourcesByTransfer.clear();
+    _resumableOutgoingTransfers.clear();
     _sessionId = null;
     _pairingSessionId = null;
     _snapshotTimer?.cancel();
@@ -380,6 +390,7 @@ class DiscoveryController extends ChangeNotifier {
     _appleP2PCandidatesByPresence.clear();
     _authenticatedAppleP2PSessions.clear();
     authenticatedLanSessions = const [];
+    rememberedPeers = const [];
     transferActivity = const [];
     try {
       await _methods.invokeMethod<void>('stop');
@@ -527,6 +538,9 @@ class DiscoveryController extends ChangeNotifier {
         authenticatedLanSessions = await pairingAuthenticatedSessions(
           sessionId: pairingSessionId,
         );
+        rememberedPeers = await pairingRememberedPeers(
+          sessionId: pairingSessionId,
+        );
         final events = await pairingEvents(
           sessionId: pairingSessionId,
           afterEventId: _lastPairingEventId,
@@ -574,6 +588,7 @@ class DiscoveryController extends ChangeNotifier {
     _appleP2PCandidatesByPresence.clear();
     _authenticatedAppleP2PSessions.clear();
     authenticatedLanSessions = const [];
+    rememberedPeers = const [];
     transferActivity = const [];
     localPresenceId = null;
     localDeviceType = null;
@@ -708,32 +723,38 @@ class DiscoveryController extends ChangeNotifier {
     final pairingSessionId = _pairingSessionId;
     final lanSession = lanSessionForPeer(peer);
     if (pairingSessionId == null || lanSession == null) return;
-    String? stagedPath;
+    var stagedPaths = <String>[];
     try {
       final raw = await _identityMethods.invokeMethod<Object?>(
-        'pickTransferFile',
+        'pickTransferFiles',
+        <String, Object>{'allowMultiple': true},
       );
-      if (raw is! Map<Object?, Object?>) return;
-      stagedPath = raw['path'] as String?;
-      final advertisedName = raw['name'] as String?;
-      if (stagedPath == null ||
-          stagedPath.isEmpty ||
-          advertisedName == null ||
-          advertisedName.isEmpty) {
-        throw StateError(
-          'Platform file selection did not return a usable file',
-        );
-      }
-      final transferId = await pairingTransferSendFile(
+      if (raw is! List<Object?>) return;
+      final sources = raw
+          .whereType<Map<Object?, Object?>>()
+          .map((entry) {
+            final path = entry['path'] as String?;
+            final name = entry['name'] as String?;
+            if (path == null || path.isEmpty || name == null || name.isEmpty) {
+              throw StateError(
+                'Platform file selection did not return a usable file',
+              );
+            }
+            return TransferFileSource(sourcePath: path, advertisedName: name);
+          })
+          .toList(growable: false);
+      if (sources.isEmpty) return;
+      stagedPaths = sources.map((source) => source.sourcePath).toList();
+      final transferId = await pairingTransferSendFiles(
         sessionId: pairingSessionId,
         authenticatedSessionId: lanSession.sessionId,
-        sourcePath: stagedPath,
-        advertisedName: advertisedName,
+        sources: sources,
       );
-      _outgoingSourcesByTransfer[transferId] = stagedPath;
+      _outgoingSourcesByTransfer[transferId] = stagedPaths;
+      _resumableOutgoingTransfers.add(transferId);
       await _refreshSnapshot();
     } catch (error) {
-      if (stagedPath != null) await _discardOutgoingSource(stagedPath);
+      await _discardOutgoingSources(stagedPaths);
       state = DiscoveryRunState.degraded;
       _setNotice(DiscoveryNotice.rustRejected, detail: _safeError(error));
       notifyListeners();
@@ -747,6 +768,7 @@ class DiscoveryController extends ChangeNotifier {
     try {
       String? staging;
       String? destination;
+      BigInt? availableBytes;
       if (accepted) {
         final raw = await _identityMethods.invokeMethod<Object?>(
           'transferDirectories',
@@ -756,7 +778,13 @@ class DiscoveryController extends ChangeNotifier {
         }
         staging = raw['staging'] as String?;
         destination = raw['destination'] as String?;
-        if (staging == null || destination == null) {
+        final rawAvailableBytes = raw['availableBytes'];
+        availableBytes = switch (rawAvailableBytes) {
+          final int value when value >= 0 => BigInt.from(value),
+          final BigInt value when !value.isNegative => value,
+          _ => null,
+        };
+        if (staging == null || destination == null || availableBytes == null) {
           throw StateError('Platform transfer directories are unavailable');
         }
       }
@@ -766,6 +794,7 @@ class DiscoveryController extends ChangeNotifier {
         accepted: accepted,
         stagingDirectory: staging,
         destinationDirectory: destination,
+        availableBytes: availableBytes,
       );
       await _refreshSnapshot();
     } catch (error) {
@@ -789,6 +818,68 @@ class DiscoveryController extends ChangeNotifier {
     }
   }
 
+  Future<void> pauseTransfer(String transferId) async {
+    final sessionId = _pairingSessionId;
+    if (sessionId == null) return;
+    try {
+      await pairingTransferPause(sessionId: sessionId, transferId: transferId);
+      await _refreshSnapshot();
+    } catch (error) {
+      state = DiscoveryRunState.degraded;
+      _setNotice(DiscoveryNotice.rustRejected, detail: _safeError(error));
+      notifyListeners();
+    }
+  }
+
+  Future<void> retryTransfer(
+    BigInt authenticatedSessionId,
+    String transferId,
+  ) async {
+    final sessionId = _pairingSessionId;
+    if (sessionId == null) return;
+    try {
+      await pairingTransferRetry(
+        sessionId: sessionId,
+        authenticatedSessionId: authenticatedSessionId,
+        transferId: transferId,
+      );
+      await _refreshSnapshot();
+    } catch (error) {
+      state = DiscoveryRunState.degraded;
+      _setNotice(DiscoveryNotice.rustRejected, detail: _safeError(error));
+      notifyListeners();
+    }
+  }
+
+  Future<void> revokePeer(BigInt authenticatedSessionId) async {
+    final sessionId = _pairingSessionId;
+    if (sessionId == null) return;
+    try {
+      await pairingRevokeAuthenticatedPeer(
+        sessionId: sessionId,
+        authenticatedSessionId: authenticatedSessionId,
+      );
+      await _refreshSnapshot();
+    } catch (error) {
+      state = DiscoveryRunState.degraded;
+      _setNotice(DiscoveryNotice.rustRejected, detail: _safeError(error));
+      notifyListeners();
+    }
+  }
+
+  Future<void> revokeRememberedPeer(String handle) async {
+    final sessionId = _pairingSessionId;
+    if (sessionId == null) return;
+    try {
+      await pairingRevokeRememberedPeer(sessionId: sessionId, handle: handle);
+      await _refreshSnapshot();
+    } catch (error) {
+      state = DiscoveryRunState.degraded;
+      _setNotice(DiscoveryNotice.rustRejected, detail: _safeError(error));
+      notifyListeners();
+    }
+  }
+
   Future<void> _discardFinishedOutgoingSources(
     List<TransferEvent> events,
   ) async {
@@ -800,8 +891,24 @@ class DiscoveryController extends ChangeNotifier {
               event.kind != TransferEventKind.failed)) {
         continue;
       }
-      final path = _outgoingSourcesByTransfer.remove(event.transferId);
-      if (path != null) await _discardOutgoingSource(path);
+      final paths = <String>{
+        ...?_outgoingSourcesByTransfer.remove(event.transferId),
+      };
+      _resumableOutgoingTransfers.remove(event.transferId);
+      final sessionId = _pairingSessionId;
+      if (sessionId != null) {
+        try {
+          paths.addAll(
+            await pairingTransferTakeFinishedSources(
+              sessionId: sessionId,
+              transferId: event.transferId,
+            ),
+          );
+        } catch (_) {
+          // Current-process sources are still safe to clean below.
+        }
+      }
+      await _discardOutgoingSources(paths);
     }
   }
 
@@ -900,10 +1007,12 @@ class DiscoveryController extends ChangeNotifier {
     _stopRequested = true;
     final sessionId = _sessionId;
     final pairingSessionId = _pairingSessionId;
-    final outgoingSources = _outgoingSourcesByTransfer.values.toList(
-      growable: false,
-    );
+    final outgoingSources = _outgoingSourcesByTransfer.entries
+        .where((entry) => !_resumableOutgoingTransfers.contains(entry.key))
+        .expand((entry) => entry.value)
+        .toList(growable: false);
     _outgoingSourcesByTransfer.clear();
+    _resumableOutgoingTransfers.clear();
     _sessionId = null;
     _pairingSessionId = null;
     _snapshotTimer?.cancel();

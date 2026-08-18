@@ -14,18 +14,21 @@ macOS ↔ macOS 作为同实现回归路径。iPhone/iPad 与 Windows 全部后�
   IPv4 定向广播并行探测。
 - 已接入但待真机验证：经过认证的 QUIC 连接、短码配对、可信设备持久化，以及配对后
   保留的 LAN QUIC 会话。
-- Android 已在启动时把 UDP socket 固定到当前非计费 Wi-Fi/以太网 `Network`，再通过
-  JNI 直接把 FD 所有权交给 Rust；无合格网络或绑定失败时仅建立 loopback listener。
-  用户主动加入 WPA2 仅本地热点时，Android 改用 `WifiNetworkSpecifier` 获得无 Internet
-  的精确 Wi-Fi `Network`；热点凭据只存在于原生 UI。两条路径均已通过主机构建，尚未
+- Android 已在启动时把 QUIC 与 remembered direct-probe 两个 UDP socket 固定到当前
+  非计费 Wi-Fi/以太网 `Network`，再通过 JNI 直接把 FD 所有权交给 Rust；无合格网络
+  或绑定失败时仅建立 loopback listener，直探不得改用 wildcard/default route。
+  用户主动加入 WPA2 热点时，Android 改用 `WifiNetworkSpecifier` 获得用户选择的
+  精确 Wi-Fi `Network`；热点是否同时有上行网络不影响本地 peer 地址限制，凭据只存在
+  于原生 UI。两条路径均已通过主机构建，尚未
   通过本节真机矩阵。
 - macOS 已使用 Network.framework 选择非昂贵、非低数据模式的 Wi-Fi/以太网接口，
-  通过 `IP_BOUND_IF` 固定 IPv4 UDP socket 后直接把 FD 所有权交给 Rust；失败时同样只
-  建立 loopback listener。用户也可明确将当前 Wi-Fi 授权为低优先级热点通道，此时
-  允许系统的昂贵/受限标记但仍精确绑定 Wi-Fi 接口。Apple IPv6 精确绑定与真机路由
-  验证仍未完成。
-- 已实现 Rust 单文件传输核心、配对后数据 stream、Flutter 发送/接收确认界面，以及
-  Android 文档选择器和 macOS 文件面板。主机回环端到端测试与两端 Debug 编译已通过；
+  通过 `IPV6_BOUND_IF` 分别固定 QUIC 与 remembered direct-probe 双栈 UDP socket 后
+  直接把 FD 所有权交给 Rust；失败时同样只建立 loopback listener。用户也可明确将
+  当前 Wi-Fi 授权为低优先级热点通道，此时允许系统的昂贵/受限标记但仍精确绑定
+  Wi-Fi 接口。IPv4/IPv6 真机路由验证仍未完成。
+- 已实现唯一 v1 多文件/暂停/重试/续传核心、配对后 data stream、
+  磁盘空间准入、Flutter 发送/接收确认与撤销信任界面，以及 Android/macOS 原生多文件
+  选择。主机回环端到端测试与两端 Debug 编译已通过；
   Android ↔ macOS、Android ↔ Android 真机文件传输仍待验证，不能据此标记为已支持。
 - 模拟器不能作为 BLE 互通证据；此流程需要一台支持 BLE 的 Android 真机。
 - 当前代码只承诺应用前台运行，不承诺后台发现。
@@ -52,7 +55,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 flutter analyze apps/halo_demo
-flutter test apps/halo_demo
+(cd apps/halo_demo && flutter test)
 ```
 
 确认 Flutter 能看到 Android 真机：

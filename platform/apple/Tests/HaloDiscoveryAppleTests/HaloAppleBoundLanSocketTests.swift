@@ -3,10 +3,10 @@ import Testing
 @testable import HaloDiscoveryApple
 
 @Test
-func ipv4SocketIsPinnedToTheRequestedInterface() throws {
+func dualStackSocketIsPinnedToTheRequestedInterface() throws {
     let loopbackIndex = Darwin.if_nametoindex("lo0")
     #expect(loopbackIndex != 0)
-    let descriptor = try HaloAppleBoundLanSocket.makeIPv4Socket(
+    let descriptor = try HaloAppleBoundLanSocket.makeDualStackSocket(
         interfaceIndex: loopbackIndex
     )
     defer { Darwin.close(descriptor) }
@@ -16,8 +16,8 @@ func ipv4SocketIsPinnedToTheRequestedInterface() throws {
     let optionResult = withUnsafeMutablePointer(to: &actualIndex) { pointer in
         Darwin.getsockopt(
             descriptor,
-            IPPROTO_IP,
-            IP_BOUND_IF,
+            IPPROTO_IPV6,
+            IPV6_BOUND_IF,
             pointer,
             &actualIndexLength
         )
@@ -25,21 +25,36 @@ func ipv4SocketIsPinnedToTheRequestedInterface() throws {
     #expect(optionResult == 0)
     #expect(actualIndex == loopbackIndex)
 
-    var address = sockaddr_in()
-    var addressLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+    var ipv6Only: Int32 = -1
+    var ipv6OnlyLength = socklen_t(MemoryLayout<Int32>.size)
+    let dualStackResult = withUnsafeMutablePointer(to: &ipv6Only) { pointer in
+        Darwin.getsockopt(
+            descriptor,
+            IPPROTO_IPV6,
+            IPV6_V6ONLY,
+            pointer,
+            &ipv6OnlyLength
+        )
+    }
+    #expect(dualStackResult == 0)
+    #expect(ipv6Only == 0)
+
+    var address = sockaddr_in6()
+    var addressLength = socklen_t(MemoryLayout<sockaddr_in6>.size)
     let addressResult = withUnsafeMutablePointer(to: &address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
             Darwin.getsockname(descriptor, socketAddress, &addressLength)
         }
     }
     #expect(addressResult == 0)
-    #expect(address.sin_port != 0)
+    #expect(address.sin6_family == sa_family_t(AF_INET6))
+    #expect(address.sin6_port != 0)
 }
 
 @Test
 func zeroInterfaceIndexIsRejectedWithoutCreatingASocket() {
     #expect(throws: HaloAppleBoundLanSocketError.invalidInterface) {
-        try HaloAppleBoundLanSocket.makeIPv4Socket(interfaceIndex: 0)
+        try HaloAppleBoundLanSocket.makeDualStackSocket(interfaceIndex: 0)
     }
 }
 

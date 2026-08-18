@@ -1,5 +1,5 @@
 use std::{
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -16,13 +16,21 @@ use crate::{IdentityPublicKey, SecretIdentityBlob};
 
 const TRUST_MAGIC: &[u8; 4] = b"HTR1";
 const ENDPOINT_MAGIC: &[u8; 4] = b"HEP1";
+const REMEMBERED_ENDPOINT_MAGIC: &[u8; 4] = b"HRI1";
 const TRUST_RECORD_LEN: usize = 4 + 65 + 2;
+const REMEMBERED_ENDPOINT_RECORD_LEN: usize = 4 + 1 + 16 + 65 + 2;
+const MAX_TRUST_DIRECTORY_ENTRIES: usize = 1024;
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PeerId([u8; 16]);
 
 impl PeerId {
+    #[must_use]
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 16] {
         &self.0
@@ -48,6 +56,12 @@ impl TrustedPeer {
     pub fn peer_id(&self) -> PeerId {
         derive_peer_id(&self.identity_key)
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RememberedEndpoint {
+    pub address: IpAddr,
+    pub peer: TrustedPeer,
 }
 
 /// Platform implementations protect opaque bytes and never interpret them.
@@ -104,6 +118,10 @@ impl FileTrustStore {
             .join(format!("{}.endpoint", hex(digest.finalize().as_slice())))
     }
 
+    fn remembered_endpoint_path(&self, address: IpAddr) -> PathBuf {
+        self.endpoint_path(address).with_extension("remembered")
+    }
+
     /// Returns the identity previously authenticated at a local-network IP.
     /// The port is deliberately excluded because listeners choose a new port
     /// after restart. A changed key at the same address fails closed.
@@ -117,8 +135,131 @@ impl FileTrustStore {
     /// Atomically updates the address-to-identity binding only after a full
     /// pairing flow has committed trust.
     pub async fn bind_ip(&self, address: IpAddr, peer: &TrustedPeer) -> Result<(), StoreError> {
-        self.save_record(self.endpoint_path(address), ENDPOINT_MAGIC, peer)
+        self.save_remembered_endpoint(address, peer).await?;
+        if let Err(error) = self
+            .save_record(self.endpoint_path(address), ENDPOINT_MAGIC, peer)
             .await
+        {
+            let _ = fs::remove_file(self.remembered_endpoint_path(address)).await;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub async fn remembered_endpoints(
+        &self,
+        maximum: usize,
+    ) -> Result<Vec<RememberedEndpoint>, StoreError> {
+        if maximum == 0 || maximum > MAX_TRUST_DIRECTORY_ENTRIES {
+            return Err(StoreError::Persistence);
+        }
+        let mut entries = match fs::read_dir(&self.root).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(_) => return Err(StoreError::Persistence),
+        };
+        let mut remembered = Vec::new();
+        let mut visited = 0_usize;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|_| StoreError::Persistence)?
+        {
+            visited = visited.checked_add(1).ok_or(StoreError::Persistence)?;
+            if visited > MAX_TRUST_DIRECTORY_ENTRIES {
+                return Err(StoreError::Persistence);
+            }
+            if entry.path().extension().and_then(|value| value.to_str()) != Some("remembered") {
+                continue;
+            }
+            remembered.push(load_remembered_endpoint(&entry.path()).await?);
+        }
+        remembered.sort_by_key(|endpoint| endpoint.address);
+        remembered.truncate(maximum);
+        Ok(remembered)
+    }
+
+    pub async fn trusted_peers(&self, maximum: usize) -> Result<Vec<TrustedPeer>, StoreError> {
+        if maximum == 0 || maximum > MAX_TRUST_DIRECTORY_ENTRIES {
+            return Err(StoreError::Persistence);
+        }
+        let mut entries = match fs::read_dir(&self.root).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(_) => return Err(StoreError::Persistence),
+        };
+        let mut peers = Vec::new();
+        let mut visited = 0_usize;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|_| StoreError::Persistence)?
+        {
+            visited = visited.checked_add(1).ok_or(StoreError::Persistence)?;
+            if visited > MAX_TRUST_DIRECTORY_ENTRIES {
+                return Err(StoreError::Persistence);
+            }
+            if entry.path().extension().and_then(|value| value.to_str()) != Some("peer") {
+                continue;
+            }
+            let peer = load_record(&entry.path(), TRUST_MAGIC, None)
+                .await?
+                .ok_or(StoreError::Corrupt)?;
+            if entry.path().file_stem().and_then(|value| value.to_str())
+                != Some(hex(peer.peer_id().as_bytes()).as_str())
+            {
+                return Err(StoreError::Corrupt);
+            }
+            peers.push(peer);
+        }
+        peers.sort_by_key(TrustedPeer::peer_id);
+        peers.truncate(maximum);
+        Ok(peers)
+    }
+
+    async fn save_remembered_endpoint(
+        &self,
+        address: IpAddr,
+        peer: &TrustedPeer,
+    ) -> Result<(), StoreError> {
+        fs::create_dir_all(&self.root)
+            .await
+            .map_err(|_| StoreError::Persistence)?;
+        let final_path = self.remembered_endpoint_path(address);
+        reject_non_file_target(&final_path).await?;
+        let suffix = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
+        let temp_path = self.root.join(format!(".remembered-{suffix}.tmp"));
+        let mut bytes = Vec::with_capacity(REMEMBERED_ENDPOINT_RECORD_LEN);
+        bytes.extend_from_slice(REMEMBERED_ENDPOINT_MAGIC);
+        match address {
+            IpAddr::V4(address) => {
+                bytes.push(4);
+                bytes.extend_from_slice(&[0; 12]);
+                bytes.extend_from_slice(&address.octets());
+            }
+            IpAddr::V6(address) => {
+                bytes.push(6);
+                bytes.extend_from_slice(&address.octets());
+            }
+        }
+        bytes.extend_from_slice(peer.identity_key.as_bytes());
+        bytes.extend_from_slice(&peer.protocol_version.to_be_bytes());
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+            .await
+            .map_err(|_| StoreError::Persistence)?;
+        if file.write_all(&bytes).await.is_err() || file.sync_all().await.is_err() {
+            let _ = fs::remove_file(&temp_path).await;
+            return Err(StoreError::Persistence);
+        }
+        drop(file);
+        if fs::rename(&temp_path, &final_path).await.is_err() {
+            let _ = fs::remove_file(&temp_path).await;
+            return Err(StoreError::Persistence);
+        }
+        Ok(())
     }
 
     async fn save_record(
@@ -153,6 +294,45 @@ impl FileTrustStore {
             return Err(StoreError::Persistence);
         }
         Ok(())
+    }
+
+    pub async fn revoke_peer(&self, peer_id: PeerId) -> Result<(), StoreError> {
+        let mut endpoint_paths = Vec::new();
+        let mut entries = match fs::read_dir(&self.root).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return self.delete(peer_id).await;
+            }
+            Err(_) => return Err(StoreError::Persistence),
+        };
+        let mut visited = 0_usize;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|_| StoreError::Persistence)?
+        {
+            visited = visited.checked_add(1).ok_or(StoreError::Persistence)?;
+            if visited > MAX_TRUST_DIRECTORY_ENTRIES {
+                return Err(StoreError::Persistence);
+            }
+            let path = entry.path();
+            let peer = match path.extension().and_then(|extension| extension.to_str()) {
+                Some("endpoint") => load_record(&path, ENDPOINT_MAGIC, None)
+                    .await?
+                    .ok_or(StoreError::Corrupt)?,
+                Some("remembered") => load_remembered_endpoint(&path).await?.peer,
+                _ => continue,
+            };
+            if peer.peer_id() == peer_id {
+                endpoint_paths.push(path);
+            }
+        }
+        for path in endpoint_paths {
+            fs::remove_file(path)
+                .await
+                .map_err(|_| StoreError::Persistence)?;
+        }
+        self.delete(peer_id).await
     }
 }
 
@@ -205,6 +385,40 @@ async fn load_record(
         return Err(StoreError::Corrupt);
     }
     Ok(Some(peer))
+}
+
+async fn load_remembered_endpoint(path: &Path) -> Result<RememberedEndpoint, StoreError> {
+    let metadata = fs::symlink_metadata(path)
+        .await
+        .map_err(|_| StoreError::Persistence)?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(StoreError::Corrupt);
+    }
+    let bytes = fs::read(path).await.map_err(|_| StoreError::Persistence)?;
+    if bytes.len() != REMEMBERED_ENDPOINT_RECORD_LEN || &bytes[..4] != REMEMBERED_ENDPOINT_MAGIC {
+        return Err(StoreError::Corrupt);
+    }
+    let address = match bytes[4] {
+        4 if bytes[5..17] == [0; 12] => {
+            IpAddr::V4(Ipv4Addr::new(bytes[17], bytes[18], bytes[19], bytes[20]))
+        }
+        6 => {
+            let mut octets = [0_u8; 16];
+            octets.copy_from_slice(&bytes[5..21]);
+            IpAddr::V6(Ipv6Addr::from(octets))
+        }
+        _ => return Err(StoreError::Corrupt),
+    };
+    let mut key = [0_u8; 65];
+    key.copy_from_slice(&bytes[21..86]);
+    let identity_key = IdentityPublicKey::from_bytes(key).map_err(|_| StoreError::Corrupt)?;
+    Ok(RememberedEndpoint {
+        address,
+        peer: TrustedPeer {
+            identity_key,
+            protocol_version: u16::from_be_bytes([bytes[86], bytes[87]]),
+        },
+    })
 }
 
 async fn reject_non_file_target(path: &Path) -> Result<(), StoreError> {
@@ -272,6 +486,83 @@ mod tests {
             .await
             .unwrap_or_else(|error| panic!("tamper: {error}"));
         assert_eq!(store.load(peer.peer_id()).await, Err(StoreError::Corrupt));
+        let _ = fs::remove_dir_all(root).await;
+    }
+
+    #[tokio::test]
+    async fn revocation_removes_peer_and_endpoint_bindings_only() {
+        let root = test_directory("revoke");
+        let store = FileTrustStore::new(&root).unwrap_or_else(|error| panic!("store: {error}"));
+        let first =
+            DeviceIdentity::generate().unwrap_or_else(|error| panic!("first identity: {error}"));
+        let second =
+            DeviceIdentity::generate().unwrap_or_else(|error| panic!("second identity: {error}"));
+        let first_peer = TrustedPeer {
+            identity_key: first.public_key(),
+            protocol_version: 1,
+        };
+        let second_peer = TrustedPeer {
+            identity_key: second.public_key(),
+            protocol_version: 1,
+        };
+        let first_address = "192.168.1.2"
+            .parse()
+            .unwrap_or_else(|error| panic!("first address: {error}"));
+        let second_address = "192.168.1.3"
+            .parse()
+            .unwrap_or_else(|error| panic!("second address: {error}"));
+        for (peer, address) in [(&first_peer, first_address), (&second_peer, second_address)] {
+            store
+                .save(peer)
+                .await
+                .unwrap_or_else(|error| panic!("save peer: {error}"));
+            store
+                .bind_ip(address, peer)
+                .await
+                .unwrap_or_else(|error| panic!("bind endpoint: {error}"));
+        }
+        assert_eq!(
+            store
+                .remembered_endpoints(8)
+                .await
+                .unwrap_or_else(|error| panic!("remembered endpoints: {error}"))
+                .iter()
+                .map(|endpoint| endpoint.address)
+                .collect::<Vec<_>>(),
+            vec![first_address, second_address]
+        );
+        assert_eq!(
+            store
+                .trusted_peers(8)
+                .await
+                .unwrap_or_else(|error| panic!("trusted peers: {error}"))
+                .len(),
+            2
+        );
+
+        store
+            .revoke_peer(first_peer.peer_id())
+            .await
+            .unwrap_or_else(|error| panic!("revoke peer: {error}"));
+
+        assert_eq!(store.load(first_peer.peer_id()).await, Ok(None));
+        assert_eq!(store.load_expected_for_ip(first_address).await, Ok(None));
+        assert_eq!(
+            store.load(second_peer.peer_id()).await,
+            Ok(Some(second_peer.clone()))
+        );
+        assert_eq!(
+            store.load_expected_for_ip(second_address).await,
+            Ok(Some(second_peer.clone()))
+        );
+        assert_eq!(
+            store.remembered_endpoints(8).await,
+            Ok(vec![RememberedEndpoint {
+                address: second_address,
+                peer: second_peer.clone(),
+            }])
+        );
+        assert_eq!(store.trusted_peers(8).await, Ok(vec![second_peer]));
         let _ = fs::remove_dir_all(root).await;
     }
 

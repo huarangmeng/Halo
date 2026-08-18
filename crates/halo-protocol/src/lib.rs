@@ -11,8 +11,10 @@ pub use pairing::{
     ServerHello, TRANSCRIPT_HASH_LEN, WIRE_VERSION,
 };
 pub use transfer::{
-    CONTENT_DIGEST_LEN, DATA_RECORD_HEADER_LEN, DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE,
-    MAX_DATA_RECORD_LEN, MAX_FILE_NAME_LEN, MAX_FILE_SIZE, TRANSFER_ID_LEN, TransferCancel,
-    TransferCancelReason, TransferChunk, TransferComplete, TransferDecision, TransferMessage,
-    TransferOffer, TransferProtocolError,
+    BATCH_MANIFEST_DIGEST_LEN, BatchCancel, BatchCancelReason, BatchChunk, BatchChunkRef,
+    BatchComplete, BatchDecision, BatchPause, BatchPauseReason, CONTENT_DIGEST_LEN,
+    DATA_RECORD_HEADER_LEN, DEFAULT_CHUNK_SIZE, MAX_BATCH_FILES, MAX_CHUNK_SIZE,
+    MAX_DATA_RECORD_LEN, MAX_FILE_NAME_LEN, MAX_FILE_SIZE, ManifestFile, ResumePosition,
+    TRANSFER_ID_LEN, TRANSFER_WIRE_VERSION, TransferManifest, TransferMessage,
+    TransferProtocolError,
 };

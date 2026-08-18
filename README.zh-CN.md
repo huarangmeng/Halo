@@ -11,16 +11,20 @@ macOS 作为同实现回归路径。iPhone/iPad 和 Windows 仍是协议目标�
 > Demo，底层使用 Rust 发现核心与极薄的原生 BLE 驱动。Android ↔ macOS 已完成一次
 > 真机互测；iOS arm64 已编译通过，但仍待真机互通验证。目前还没有 SDK 发布版、
 > 真机文件传输验证或四端验证。实验性的 TLS 绑定配对协议、QUIC 监听与连接、受保护
-> 身份存储、可信设备持久化和 Flutter 同意流程已经接入 Demo，并通过主机回环测试及
-> Android、iOS Simulator、macOS 编译检查，但尚未完成 Android ↔ macOS 配对真机
-> 验证。LAN 配对后
-> QUIC 会话保留和 Rust 单文件校验/安全落盘核心已经实现；共享 Demo 也已接入
-> Android/macOS 原生文件选择、接收确认和取消流程，文件字节不经过 Dart。通用数据
+> 身份存储、可信设备持久化和 Flutter 同意流程已经接入 Demo，并通过主机回环测试与
+> Android/macOS 编译检查，但尚未完成 Android ↔ macOS 端到端真机验证。LAN 配对后
+> QUIC 会话会保留，并使用唯一的应用协议 v1。该协议已实现有界多文件清单、接收确认、
+> 磁盘空间准入、文件/分块进度、明确暂停/取消、重新认证后的重试、绑定 peer 的发送端
+> 持久任务与接收端 chunk 前缀状态、整文件校验、整批不覆盖落盘，以及显式撤销信任；
+> 未发布的单文件草案已删除。共享 Demo 使用 Android/macOS 原生多文件选择器，文件字节
+> 不经过 Dart。已记住地址的直探使用第二个 Socket，并与 QUIC 一样精确固定到 Android
+> `Network` 或 Apple 接口。通用数据
 > 通道 Broker 已把自动非计费共享 LAN 与低优先级、用户明确授权的本地热点拆成两类，
 > 并实现接口绑定、有界系统提示和认证后胜出策略。Android 可通过
 > `WifiNetworkSpecifier` 加入 WPA2 仅本地热点，将 UDP socket 固定到该 OS `Network`
 > 后直接移交 Rust，热点凭据不经过 Dart。macOS 可由用户明确授权当前 Wi-Fi 为热点
-> 通道，并继续用 `IP_BOUND_IF` 精确绑定；普通 Wi-Fi/以太网默认仍要求非昂贵、非受限。
+> 通道，并继续用 `IPV6_BOUND_IF` 精确绑定双栈 Socket；普通 Wi-Fi/以太网默认仍要求
+> 非昂贵、非受限。
 > 端点自身创建热点尚不宣称支持，因为宿主侧精确路径契约仍缺少真机证据。
 > Windows LAN 精确绑定与 Direct/Aware 适配器仍待完成，且不属于当前 Android ↔
 > macOS 里程碑。主机回环与主机构建已通过，

@@ -579,7 +579,7 @@ mod tests {
     use crate::{Capabilities, ProviderKind};
 
     fn protocol() -> ProtocolRange {
-        ProtocolRange::new(1, 2).unwrap_or_else(|error| panic!("test range: {error}"))
+        ProtocolRange::new(1, 1).unwrap_or_else(|error| panic!("test range: {error}"))
     }
 
     fn local() -> LocalPresence {

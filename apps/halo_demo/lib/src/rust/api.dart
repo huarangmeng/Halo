@@ -17,10 +17,12 @@ Future<DiscoveryBootstrap> discoveryStart({
   required int quicPort,
   required bool enableLan,
   required DiscoveryDeviceType deviceType,
+  required List<String> rememberedEndpointAddresses,
 }) => HaloRustLib.instance.api.crateApiDiscoveryStart(
   quicPort: quicPort,
   enableLan: enableLan,
   deviceType: deviceType,
+  rememberedEndpointAddresses: rememberedEndpointAddresses,
 );
 
 Future<Uint8List> discoveryRefreshBlePresence({required BigInt sessionId}) =>

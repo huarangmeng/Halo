@@ -374,6 +374,37 @@ class _DiagnosticsSheet extends StatelessWidget {
               ),
             const SizedBox(height: 16),
             Text(
+              l10n.diagnosticsTrustedDevices,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (controller.rememberedPeers.isEmpty)
+              Text(l10n.diagnosticsNoTrustedDevices)
+            else
+              ...controller.rememberedPeers.map(
+                (peer) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    peer.activeSessionId == null
+                        ? Icons.verified_user_outlined
+                        : Icons.link,
+                  ),
+                  title: Text(
+                    l10n.diagnosticsTrustedDeviceDescription(peer.fingerprint),
+                  ),
+                  trailing: IconButton(
+                    tooltip: l10n.pairingForget,
+                    onPressed: () async {
+                      if (await _confirmForgetPeer(context)) {
+                        await controller.revokeRememberedPeer(peer.handle);
+                      }
+                    },
+                    icon: const Icon(Icons.person_remove_outlined),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            Text(
               l10n.diagnosticsRecentEvents,
               style: Theme.of(context).textTheme.titleMedium,
             ),
@@ -504,7 +535,7 @@ class _PeerCard extends StatelessWidget {
                           ? () => controller.sendFileToPeer(peer)
                           : null,
                       icon: const Icon(Icons.upload_file_outlined),
-                      label: Text(l10n.transferSendFile),
+                      label: Text(l10n.transferSendFiles),
                     )
                   else
                     FilledButton.icon(
@@ -518,11 +549,41 @@ class _PeerCard extends StatelessWidget {
                       icon: const Icon(Icons.lock_outline),
                       label: Text(l10n.connectSecurely),
                     ),
-                  if (transferInProgress && transfer != null)
-                    OutlinedButton(
+                  if (transfer?.kind == TransferEventKind.transferring &&
+                      transfer!.resumable)
+                    IconButton(
+                      tooltip: l10n.transferPause,
+                      onPressed: () =>
+                          controller.pauseTransfer(transfer.transferId),
+                      icon: const Icon(Icons.pause_circle_outline),
+                    ),
+                  if (transfer?.kind == TransferEventKind.paused)
+                    IconButton(
+                      tooltip: l10n.transferRetry,
+                      onPressed: () => controller.retryTransfer(
+                        lanSession!.sessionId,
+                        transfer!.transferId,
+                      ),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  if ((transferInProgress ||
+                          transfer?.kind == TransferEventKind.paused) &&
+                      transfer != null)
+                    IconButton(
+                      tooltip: l10n.transferCancel,
                       onPressed: () =>
                           controller.cancelTransfer(transfer.transferId),
-                      child: Text(l10n.transferCancel),
+                      icon: const Icon(Icons.cancel_outlined),
+                    ),
+                  if (lanSession != null)
+                    IconButton(
+                      tooltip: l10n.pairingForget,
+                      onPressed: () async {
+                        if (await _confirmForgetPeer(context)) {
+                          await controller.revokePeer(lanSession.sessionId);
+                        }
+                      },
+                      icon: const Icon(Icons.person_remove_outlined),
                     ),
                 ],
               ),
@@ -551,16 +612,33 @@ class _IncomingTransferPanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              l10n.transferIncomingTitle,
+              event.fileNames.length > 1
+                  ? l10n.transferIncomingBatchTitle
+                  : l10n.transferIncomingTitle,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             Text(
-              l10n.transferOfferDescription(
-                event.fileName,
-                _formatBytes(event.fileSize),
-              ),
+              event.fileNames.length > 1
+                  ? l10n.transferBatchOfferDescription(
+                      event.fileNames.length,
+                      _formatBytes(event.fileSize),
+                    )
+                  : l10n.transferOfferDescription(
+                      event.fileName,
+                      _formatBytes(event.fileSize),
+                    ),
             ),
+            if (event.fileNames.length > 1) ...[
+              const SizedBox(height: 8),
+              for (var index = 0; index < event.fileNames.length; index++)
+                Text(
+                  '${event.fileNames[index]} · '
+                  '${_formatBytes(event.fileSizes[index])}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
             const SizedBox(height: 8),
             Text(
               l10n.transferLanOnly,
@@ -574,7 +652,11 @@ class _IncomingTransferPanel extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: () => onRespond!(true),
                     icon: const Icon(Icons.download_outlined),
-                    label: Text(l10n.transferAccept),
+                    label: Text(
+                      event.fileNames.length > 1
+                          ? l10n.transferAcceptBatch
+                          : l10n.transferAccept,
+                    ),
                   ),
                   OutlinedButton(
                     onPressed: () => onRespond!(false),
@@ -604,6 +686,7 @@ class _TransferSummary extends StatelessWidget {
       TransferEventKind.transferring => l10n.transferTransferring,
       TransferEventKind.completed => l10n.transferCompleted,
       TransferEventKind.rejected => l10n.transferRejected,
+      TransferEventKind.paused => l10n.transferPaused,
       TransferEventKind.cancelled => l10n.transferCancelled,
       TransferEventKind.failed => l10n.transferFailed,
     };
@@ -612,7 +695,12 @@ class _TransferSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$status · ${event.fileName} · ${_formatBytes(event.fileSize)}'),
+          Text(
+            event.fileNames.length > 1
+                ? '$status · '
+                      '${l10n.transferBatchOfferDescription(event.fileNames.length, _formatBytes(event.fileSize))}'
+                : '$status · ${event.fileName} · ${_formatBytes(event.fileSize)}',
+          ),
           if (event.kind == TransferEventKind.transferring) ...[
             const SizedBox(height: 8),
             LinearProgressIndicator(
@@ -628,6 +716,15 @@ class _TransferSummary extends StatelessWidget {
               '${_formatBytes(event.transferredBytes)} / '
               '${_formatBytes(event.fileSize)}',
             ),
+            if (event.fileNames.length > 1) ...[
+              const SizedBox(height: 2),
+              Text(
+                l10n.transferFilesProgress(
+                  event.completedFiles,
+                  event.fileNames.length,
+                ),
+              ),
+            ],
           ],
           if (event.finalPath case final path?) ...[
             const SizedBox(height: 4),
@@ -636,8 +733,10 @@ class _TransferSummary extends StatelessWidget {
           if (event.detail case final detail?) ...[
             const SizedBox(height: 4),
             Text(
-              detail,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              _transferDetailLabel(l10n, detail),
+              style: event.kind == TransferEventKind.failed
+                  ? TextStyle(color: Theme.of(context).colorScheme.error)
+                  : null,
             ),
           ],
         ],
@@ -667,6 +766,27 @@ String _transferPercent(TransferEvent event) {
           .toStringAsFixed(0);
   return '$percent%';
 }
+
+String _transferDetailLabel(AppLocalizations l10n, String detail) =>
+    switch (detail) {
+      'insufficient_space' ||
+      'remote_storage' => l10n.transferErrorInsufficientSpace,
+      'destination_exists' => l10n.transferErrorDestinationExists,
+      'integrity' || 'remote_integrity' => l10n.transferErrorIntegrity,
+      'source_changed' => l10n.transferErrorSourceChanged,
+      'resume_state' ||
+      'resume_mismatch' ||
+      'send_job' => l10n.transferErrorResume,
+      'transport' || 'remote_paused' => l10n.transferErrorNetwork,
+      'protocol' || 'remote_protocol' => l10n.transferErrorProtocol,
+      'storage' || 'staging' || 'finalization' => l10n.transferErrorStorage,
+      'invalid_file_name' => l10n.transferErrorInvalidName,
+      'duplicate_file_name' => l10n.transferErrorDuplicateName,
+      'retrying' => l10n.transferRetrying,
+      'paused' => l10n.transferPaused,
+      'cancelled' || 'remote_cancelled' => l10n.transferCancelled,
+      _ => l10n.transferErrorUnknown(detail),
+    };
 
 class _PairingPanel extends StatelessWidget {
   const _PairingPanel({required this.event, this.onRespond});
@@ -776,7 +896,30 @@ String _pairingStatusLabel(AppLocalizations l10n, PairingEvent event) =>
       PairingEventKind.cancelled => l10n.pairingTimedOut,
       PairingEventKind.failed => l10n.pairingFailed,
       PairingEventKind.disconnected => l10n.pairingDisconnected,
+      PairingEventKind.revoked => l10n.pairingRevoked,
     };
+
+Future<bool> _confirmForgetPeer(BuildContext context) async {
+  final l10n = AppLocalizations.of(context);
+  return await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(l10n.pairingForgetTitle),
+          content: Text(l10n.pairingForgetDescription),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(l10n.pairingForgetCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(l10n.pairingForgetConfirm),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
 
 class _PeerField extends StatelessWidget {
   const _PeerField({required this.label, required this.value});

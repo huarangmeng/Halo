@@ -67,7 +67,7 @@ class HaloRustLib
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -636126895;
+  int get rustContentHash => -2038106425;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -102,6 +102,7 @@ abstract class HaloRustLibApi extends BaseApi {
     required int quicPort,
     required bool enableLan,
     required DiscoveryDeviceType deviceType,
+    required List<String> rememberedEndpointAddresses,
   });
 
   Future<void> crateApiDiscoveryStop({required BigInt sessionId});
@@ -153,10 +154,28 @@ abstract class HaloRustLibApi extends BaseApi {
     required BigInt channelId,
   });
 
+  Future<List<String>> crateApiPairingApiPairingRememberedEndpointAddresses({
+    required BigInt sessionId,
+  });
+
+  Future<List<RememberedPeerInfo>> crateApiPairingApiPairingRememberedPeers({
+    required BigInt sessionId,
+  });
+
   Future<void> crateApiPairingApiPairingRespond({
     required BigInt sessionId,
     required BigInt requestId,
     required bool accepted,
+  });
+
+  Future<void> crateApiPairingApiPairingRevokeAuthenticatedPeer({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+  });
+
+  Future<void> crateApiPairingApiPairingRevokeRememberedPeer({
+    required BigInt sessionId,
+    required String handle,
   });
 
   Future<PairingBootstrap> crateApiPairingApiPairingStart({
@@ -182,12 +201,24 @@ abstract class HaloRustLibApi extends BaseApi {
     required BigInt afterEventId,
   });
 
+  Future<void> crateApiPairingApiPairingTransferPause({
+    required BigInt sessionId,
+    required String transferId,
+  });
+
   Future<void> crateApiPairingApiPairingTransferRespond({
     required BigInt sessionId,
     required BigInt requestId,
     required bool accepted,
     String? stagingDirectory,
     String? destinationDirectory,
+    BigInt? availableBytes,
+  });
+
+  Future<String> crateApiPairingApiPairingTransferRetry({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+    required String transferId,
   });
 
   Future<String> crateApiPairingApiPairingTransferSendFile({
@@ -195,6 +226,17 @@ abstract class HaloRustLibApi extends BaseApi {
     required BigInt authenticatedSessionId,
     required String sourcePath,
     String? advertisedName,
+  });
+
+  Future<String> crateApiPairingApiPairingTransferSendFiles({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+    required List<TransferFileSource> sources,
+  });
+
+  Future<List<String>> crateApiPairingApiPairingTransferTakeFinishedSources({
+    required BigInt sessionId,
+    required String transferId,
   });
 }
 
@@ -349,6 +391,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     required int quicPort,
     required bool enableLan,
     required DiscoveryDeviceType deviceType,
+    required List<String> rememberedEndpointAddresses,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -357,6 +400,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           sse_encode_u_16(quicPort, serializer);
           sse_encode_bool(enableLan, serializer);
           sse_encode_discovery_device_type(deviceType, serializer);
+          sse_encode_list_String(rememberedEndpointAddresses, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -369,7 +413,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           decodeErrorData: sse_decode_halo_api_error,
         ),
         constMeta: kCrateApiDiscoveryStartConstMeta,
-        argValues: [quicPort, enableLan, deviceType],
+        argValues: [
+          quicPort,
+          enableLan,
+          deviceType,
+          rememberedEndpointAddresses,
+        ],
         apiImpl: this,
       ),
     );
@@ -377,7 +426,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
 
   TaskConstMeta get kCrateApiDiscoveryStartConstMeta => const TaskConstMeta(
     debugName: "discovery_start",
-    argNames: ["quicPort", "enableLan", "deviceType"],
+    argNames: [
+      "quicPort",
+      "enableLan",
+      "deviceType",
+      "rememberedEndpointAddresses",
+    ],
   );
 
   @override
@@ -728,6 +782,74 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       );
 
   @override
+  Future<List<String>> crateApiPairingApiPairingRememberedEndpointAddresses({
+    required BigInt sessionId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 16,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta:
+            kCrateApiPairingApiPairingRememberedEndpointAddressesConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPairingApiPairingRememberedEndpointAddressesConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_remembered_endpoint_addresses",
+        argNames: ["sessionId"],
+      );
+
+  @override
+  Future<List<RememberedPeerInfo>> crateApiPairingApiPairingRememberedPeers({
+    required BigInt sessionId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 17,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_remembered_peer_info,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingRememberedPeersConstMeta,
+        argValues: [sessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingRememberedPeersConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_remembered_peers",
+        argNames: ["sessionId"],
+      );
+
+  @override
   Future<void> crateApiPairingApiPairingRespond({
     required BigInt sessionId,
     required BigInt requestId,
@@ -743,7 +865,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 18,
             port: port_,
           );
         },
@@ -765,6 +887,77 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       );
 
   @override
+  Future<void> crateApiPairingApiPairingRevokeAuthenticatedPeer({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(authenticatedSessionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 19,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingRevokeAuthenticatedPeerConstMeta,
+        argValues: [sessionId, authenticatedSessionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPairingApiPairingRevokeAuthenticatedPeerConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_revoke_authenticated_peer",
+        argNames: ["sessionId", "authenticatedSessionId"],
+      );
+
+  @override
+  Future<void> crateApiPairingApiPairingRevokeRememberedPeer({
+    required BigInt sessionId,
+    required String handle,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_String(handle, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 20,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingRevokeRememberedPeerConstMeta,
+        argValues: [sessionId, handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingRevokeRememberedPeerConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_revoke_remembered_peer",
+        argNames: ["sessionId", "handle"],
+      );
+
+  @override
   Future<PairingBootstrap> crateApiPairingApiPairingStart({
     Uint8List? identityBlob,
     required String trustStoreDirectory,
@@ -778,7 +971,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 21,
             port: port_,
           );
         },
@@ -809,7 +1002,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 22,
             port: port_,
           );
         },
@@ -843,7 +1036,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 23,
             port: port_,
           );
         },
@@ -878,7 +1071,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 24,
             port: port_,
           );
         },
@@ -913,7 +1106,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 25,
             port: port_,
           );
         },
@@ -935,12 +1128,48 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       );
 
   @override
+  Future<void> crateApiPairingApiPairingTransferPause({
+    required BigInt sessionId,
+    required String transferId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_String(transferId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 26,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingTransferPauseConstMeta,
+        argValues: [sessionId, transferId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingTransferPauseConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_pause",
+        argNames: ["sessionId", "transferId"],
+      );
+
+  @override
   Future<void> crateApiPairingApiPairingTransferRespond({
     required BigInt sessionId,
     required BigInt requestId,
     required bool accepted,
     String? stagingDirectory,
     String? destinationDirectory,
+    BigInt? availableBytes,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -951,10 +1180,11 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           sse_encode_bool(accepted, serializer);
           sse_encode_opt_String(stagingDirectory, serializer);
           sse_encode_opt_String(destinationDirectory, serializer);
+          sse_encode_opt_box_autoadd_u_64(availableBytes, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 27,
             port: port_,
           );
         },
@@ -969,6 +1199,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           accepted,
           stagingDirectory,
           destinationDirectory,
+          availableBytes,
         ],
         apiImpl: this,
       ),
@@ -984,7 +1215,45 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           "accepted",
           "stagingDirectory",
           "destinationDirectory",
+          "availableBytes",
         ],
+      );
+
+  @override
+  Future<String> crateApiPairingApiPairingTransferRetry({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+    required String transferId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(authenticatedSessionId, serializer);
+          sse_encode_String(transferId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 28,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingTransferRetryConstMeta,
+        argValues: [sessionId, authenticatedSessionId, transferId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingTransferRetryConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_retry",
+        argNames: ["sessionId", "authenticatedSessionId", "transferId"],
       );
 
   @override
@@ -1005,7 +1274,7 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1036,6 +1305,80 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
         ],
       );
 
+  @override
+  Future<String> crateApiPairingApiPairingTransferSendFiles({
+    required BigInt sessionId,
+    required BigInt authenticatedSessionId,
+    required List<TransferFileSource> sources,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_u_64(authenticatedSessionId, serializer);
+          sse_encode_list_transfer_file_source(sources, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 30,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta: kCrateApiPairingApiPairingTransferSendFilesConstMeta,
+        argValues: [sessionId, authenticatedSessionId, sources],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPairingApiPairingTransferSendFilesConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_send_files",
+        argNames: ["sessionId", "authenticatedSessionId", "sources"],
+      );
+
+  @override
+  Future<List<String>> crateApiPairingApiPairingTransferTakeFinishedSources({
+    required BigInt sessionId,
+    required String transferId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(sessionId, serializer);
+          sse_encode_String(transferId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 31,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: sse_decode_halo_api_error,
+        ),
+        constMeta:
+            kCrateApiPairingApiPairingTransferTakeFinishedSourcesConstMeta,
+        argValues: [sessionId, transferId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiPairingApiPairingTransferTakeFinishedSourcesConstMeta =>
+      const TaskConstMeta(
+        debugName: "pairing_transfer_take_finished_sources",
+        argNames: ["sessionId", "transferId"],
+      );
+
   @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -1059,6 +1402,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
+  }
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -1188,6 +1537,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  Uint64List dco_decode_list_prim_u_64_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeUint64List(raw);
+  }
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as List<int>;
@@ -1200,15 +1555,33 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  List<RememberedPeerInfo> dco_decode_list_remembered_peer_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_remembered_peer_info).toList();
+  }
+
+  @protected
   List<TransferEvent> dco_decode_list_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_transfer_event).toList();
   }
 
   @protected
+  List<TransferFileSource> dco_decode_list_transfer_file_source(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_transfer_file_source).toList();
+  }
+
+  @protected
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
   }
 
   @protected
@@ -1294,6 +1667,19 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  RememberedPeerInfo dco_decode_remembered_peer_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return RememberedPeerInfo(
+      handle: dco_decode_String(arr[0]),
+      fingerprint: dco_decode_String(arr[1]),
+      activeSessionId: dco_decode_opt_box_autoadd_u_64(arr[2]),
+    );
+  }
+
+  @protected
   TransferDirection dco_decode_transfer_direction(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return TransferDirection.values[raw as int];
@@ -1303,8 +1689,8 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   TransferEvent dco_decode_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return TransferEvent(
       eventId: dco_decode_u_64(arr[0]),
       requestId: dco_decode_opt_box_autoadd_u_64(arr[1]),
@@ -1313,10 +1699,15 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       direction: dco_decode_transfer_direction(arr[4]),
       kind: dco_decode_transfer_event_kind(arr[5]),
       fileName: dco_decode_String(arr[6]),
-      fileSize: dco_decode_u_64(arr[7]),
-      transferredBytes: dco_decode_u_64(arr[8]),
-      finalPath: dco_decode_opt_String(arr[9]),
-      detail: dco_decode_opt_String(arr[10]),
+      fileNames: dco_decode_list_String(arr[7]),
+      fileSizes: dco_decode_list_prim_u_64_strict(arr[8]),
+      fileSize: dco_decode_u_64(arr[9]),
+      transferredBytes: dco_decode_u_64(arr[10]),
+      completedFiles: dco_decode_u_32(arr[11]),
+      currentFileIndex: dco_decode_opt_box_autoadd_u_32(arr[12]),
+      resumable: dco_decode_bool(arr[13]),
+      finalPath: dco_decode_opt_String(arr[14]),
+      detail: dco_decode_opt_String(arr[15]),
     );
   }
 
@@ -1324,6 +1715,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   TransferEventKind dco_decode_transfer_event_kind(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return TransferEventKind.values[raw as int];
+  }
+
+  @protected
+  TransferFileSource dco_decode_transfer_file_source(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return TransferFileSource(
+      sourcePath: dco_decode_String(arr[0]),
+      advertisedName: dco_decode_opt_String(arr[1]),
+    );
   }
 
   @protected
@@ -1382,6 +1785,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_32(deserializer));
   }
 
   @protected
@@ -1568,6 +1977,13 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  Uint64List sse_decode_list_prim_u_64_strict(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var len_ = sse_decode_i_32(deserializer);
+    return deserializer.buffer.getUint64List(len_);
+  }
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -1579,6 +1995,20 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<RememberedPeerInfo> sse_decode_list_remembered_peer_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RememberedPeerInfo>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_remembered_peer_info(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -1596,11 +2026,36 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  List<TransferFileSource> sse_decode_list_transfer_file_source(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TransferFileSource>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_transfer_file_source(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_32(deserializer));
     } else {
       return null;
     }
@@ -1718,6 +2173,21 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  RememberedPeerInfo sse_decode_remembered_peer_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_handle = sse_decode_String(deserializer);
+    var var_fingerprint = sse_decode_String(deserializer);
+    var var_activeSessionId = sse_decode_opt_box_autoadd_u_64(deserializer);
+    return RememberedPeerInfo(
+      handle: var_handle,
+      fingerprint: var_fingerprint,
+      activeSessionId: var_activeSessionId,
+    );
+  }
+
+  @protected
   TransferDirection sse_decode_transfer_direction(
     SseDeserializer deserializer,
   ) {
@@ -1736,8 +2206,13 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     var var_direction = sse_decode_transfer_direction(deserializer);
     var var_kind = sse_decode_transfer_event_kind(deserializer);
     var var_fileName = sse_decode_String(deserializer);
+    var var_fileNames = sse_decode_list_String(deserializer);
+    var var_fileSizes = sse_decode_list_prim_u_64_strict(deserializer);
     var var_fileSize = sse_decode_u_64(deserializer);
     var var_transferredBytes = sse_decode_u_64(deserializer);
+    var var_completedFiles = sse_decode_u_32(deserializer);
+    var var_currentFileIndex = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_resumable = sse_decode_bool(deserializer);
     var var_finalPath = sse_decode_opt_String(deserializer);
     var var_detail = sse_decode_opt_String(deserializer);
     return TransferEvent(
@@ -1748,8 +2223,13 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
       direction: var_direction,
       kind: var_kind,
       fileName: var_fileName,
+      fileNames: var_fileNames,
+      fileSizes: var_fileSizes,
       fileSize: var_fileSize,
       transferredBytes: var_transferredBytes,
+      completedFiles: var_completedFiles,
+      currentFileIndex: var_currentFileIndex,
+      resumable: var_resumable,
       finalPath: var_finalPath,
       detail: var_detail,
     );
@@ -1762,6 +2242,19 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return TransferEventKind.values[inner];
+  }
+
+  @protected
+  TransferFileSource sse_decode_transfer_file_source(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sourcePath = sse_decode_String(deserializer);
+    var var_advertisedName = sse_decode_opt_String(deserializer);
+    return TransferFileSource(
+      sourcePath: var_sourcePath,
+      advertisedName: var_advertisedName,
+    );
   }
 
   @protected
@@ -1814,6 +2307,12 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   void sse_encode_bool(bool self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self, serializer);
   }
 
   @protected
@@ -1962,6 +2461,16 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_list_prim_u_64_strict(
+    Uint64List self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    serializer.buffer.putUint64List(self);
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_loose(
     List<int> self,
     SseSerializer serializer,
@@ -1984,6 +2493,18 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_list_remembered_peer_info(
+    List<RememberedPeerInfo> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_remembered_peer_info(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_transfer_event(
     List<TransferEvent> self,
     SseSerializer serializer,
@@ -1996,12 +2517,34 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_list_transfer_file_source(
+    List<TransferFileSource> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_transfer_file_source(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_32(self, serializer);
     }
   }
 
@@ -2100,6 +2643,17 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   }
 
   @protected
+  void sse_encode_remembered_peer_info(
+    RememberedPeerInfo self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.handle, serializer);
+    sse_encode_String(self.fingerprint, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.activeSessionId, serializer);
+  }
+
+  @protected
   void sse_encode_transfer_direction(
     TransferDirection self,
     SseSerializer serializer,
@@ -2118,8 +2672,13 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
     sse_encode_transfer_direction(self.direction, serializer);
     sse_encode_transfer_event_kind(self.kind, serializer);
     sse_encode_String(self.fileName, serializer);
+    sse_encode_list_String(self.fileNames, serializer);
+    sse_encode_list_prim_u_64_strict(self.fileSizes, serializer);
     sse_encode_u_64(self.fileSize, serializer);
     sse_encode_u_64(self.transferredBytes, serializer);
+    sse_encode_u_32(self.completedFiles, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.currentFileIndex, serializer);
+    sse_encode_bool(self.resumable, serializer);
     sse_encode_opt_String(self.finalPath, serializer);
     sse_encode_opt_String(self.detail, serializer);
   }
@@ -2131,6 +2690,16 @@ class HaloRustLibApiImpl extends HaloRustLibApiImplPlatform
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_file_source(
+    TransferFileSource self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.sourcePath, serializer);
+    sse_encode_opt_String(self.advertisedName, serializer);
   }
 
   @protected

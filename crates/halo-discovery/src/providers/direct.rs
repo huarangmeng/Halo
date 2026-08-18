@@ -1,7 +1,10 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    net::{SocketAddr, UdpSocket as StdUdpSocket},
+    time::Duration,
+};
 
 use async_trait::async_trait;
-use tokio::{net::UdpSocket, task::JoinSet};
+use tokio::{net::UdpSocket as TokioUdpSocket, task::JoinSet};
 
 use crate::{
     DiscoveryProvider, Endpoint, Observation, PresenceId, ProviderContext, ProviderError,
@@ -33,7 +36,7 @@ impl Default for DirectProbeConfig {
             probe_interval: Duration::from_secs(8),
             response_timeout: Duration::from_secs(2),
             observation_ttl: Duration::from_secs(20),
-            max_endpoints: 64,
+            max_endpoints: 8,
         }
     }
 }
@@ -41,6 +44,7 @@ impl Default for DirectProbeConfig {
 pub struct DirectProbeProvider {
     id: ProviderId,
     config: DirectProbeConfig,
+    bound_socket: Option<StdUdpSocket>,
 }
 
 impl DirectProbeProvider {
@@ -49,6 +53,19 @@ impl DirectProbeProvider {
         Ok(Self {
             id: ProviderId::builtin(ProviderKind::Direct, "direct"),
             config,
+            bound_socket: None,
+        })
+    }
+
+    pub fn with_bound_socket(
+        config: DirectProbeConfig,
+        socket: StdUdpSocket,
+    ) -> Result<Self, ProviderError> {
+        validate_config(&config)?;
+        Ok(Self {
+            id: ProviderId::builtin(ProviderKind::Direct, "direct"),
+            config,
+            bound_socket: Some(socket),
         })
     }
 }
@@ -74,6 +91,17 @@ impl DiscoveryProvider for DirectProbeProvider {
         }
 
         context.set_state(self.id(), ProviderState::Ready).await?;
+        if let Some(socket) = &self.bound_socket {
+            let socket = socket
+                .try_clone()
+                .map_err(|error| ProviderError::Network(error.to_string()))?;
+            socket
+                .set_nonblocking(true)
+                .map_err(|error| ProviderError::Network(error.to_string()))?;
+            let socket = TokioUdpSocket::from_std(socket)
+                .map_err(|error| ProviderError::Network(error.to_string()))?;
+            return probe_bound_endpoints(context, self.id(), self.config.clone(), socket).await;
+        }
         let mut tasks = JoinSet::new();
         for (index, endpoint) in self.config.endpoints.iter().copied().enumerate() {
             let context = context.clone();
@@ -135,7 +163,7 @@ async fn probe_endpoint(
         SocketAddr::V4(_) => SocketAddr::from(([0, 0, 0, 0], 0)),
         SocketAddr::V6(_) => SocketAddr::from(([0_u16; 8], 0)),
     };
-    let socket = UdpSocket::bind(bind_address).await?;
+    let socket = TokioUdpSocket::bind(bind_address).await?;
     let cancel = context.cancellation_token();
     let mut sequence = salt;
     let mut buffer = [0_u8; 512];
@@ -190,6 +218,80 @@ async fn probe_endpoint(
             }
         }
 
+        tokio::select! {
+            () = cancel.cancelled() => return Ok(()),
+            () = tokio::time::sleep(config.probe_interval) => {}
+        }
+    }
+}
+
+async fn probe_bound_endpoints(
+    context: ProviderContext,
+    provider: ProviderId,
+    config: DirectProbeConfig,
+    socket: TokioUdpSocket,
+) -> Result<(), ProviderError> {
+    let cancel = context.cancellation_token();
+    let mut sequence = 0_u64;
+    let mut buffer = [0_u8; 512];
+    loop {
+        for known in &config.endpoints {
+            if cancel.is_cancelled() {
+                return Ok(());
+            }
+            sequence = sequence.wrapping_add(1);
+            let nonce = random_nonce();
+            let reply_port = socket.local_addr()?.port();
+            let query =
+                PresenceMessage::from_local(context.local(), MessageKind::Query, sequence, nonce)
+                    .with_reply_port(reply_port)
+                    .encode();
+            let sent_at = tokio::time::Instant::now();
+            if socket
+                .send_to(&query, known.discovery_address)
+                .await
+                .is_err()
+            {
+                continue;
+            }
+            let response = tokio::select! {
+                () = cancel.cancelled() => return Ok(()),
+                response = tokio::time::timeout(config.response_timeout, async {
+                    loop {
+                        let (length, source) = socket.recv_from(&mut buffer).await?;
+                        let Ok(message) = PresenceMessage::decode(&buffer[..length]) else {
+                            continue;
+                        };
+                        if message.kind == MessageKind::Response
+                            && message.nonce == nonce
+                            && known.expected_presence.is_none_or(
+                                |expected| message.presence_id == expected
+                            )
+                            && source.ip() == known.discovery_address.ip()
+                        {
+                            return Ok::<_, std::io::Error>((message, source));
+                        }
+                    }
+                }) => response,
+            };
+            if let Ok(Ok((message, mut source))) = response {
+                source.set_port(message.quic_port);
+                if let Ok(endpoint) = Endpoint::quic(source) {
+                    context
+                        .observe(Observation {
+                            provider: provider.clone(),
+                            presence_id: message.presence_id,
+                            protocol: message.protocol,
+                            capabilities: message.capabilities,
+                            sequence: message.sequence,
+                            endpoints: vec![endpoint],
+                            ttl: config.observation_ttl,
+                            round_trip_time: Some(sent_at.elapsed()),
+                        })
+                        .await?;
+                }
+            }
+        }
         tokio::select! {
             () = cancel.cancelled() => return Ok(()),
             () = tokio::time::sleep(config.probe_interval) => {}
@@ -259,7 +361,7 @@ mod tests {
 
     #[tokio::test]
     async fn discovers_a_known_endpoint_through_real_udp() {
-        let responder = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+        let responder = TokioUdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
             .await
             .unwrap_or_else(|error| panic!("bind responder: {error}"));
         let discovery_address = responder
@@ -335,6 +437,91 @@ mod tests {
             peers[0].best_endpoint.map(Endpoint::address),
             Some(SocketAddr::from(([127, 0, 0, 1], 49_999)))
         );
+        responder_task
+            .await
+            .unwrap_or_else(|error| panic!("responder task: {error}"));
+        session
+            .shutdown()
+            .await
+            .unwrap_or_else(|error| panic!("shutdown: {error}"));
+    }
+
+    #[tokio::test]
+    async fn bound_socket_discovers_a_known_endpoint_without_wildcard_rebind() {
+        let responder = TokioUdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap_or_else(|error| panic!("bind responder: {error}"));
+        let discovery_address = responder
+            .local_addr()
+            .unwrap_or_else(|error| panic!("responder address: {error}"));
+        let remote_id = PresenceId::from_bytes([9; 16]);
+        let remote = LocalPresence::new(
+            remote_id,
+            ProtocolRange::new(1, 1).unwrap_or_else(|error| panic!("range: {error}")),
+            Capabilities::from_bits(11),
+            49_997,
+        )
+        .unwrap_or_else(|error| panic!("remote: {error}"));
+        let responder_task = tokio::spawn(async move {
+            let mut bytes = [0_u8; 512];
+            let (length, source) = responder
+                .recv_from(&mut bytes)
+                .await
+                .unwrap_or_else(|error| panic!("receive query: {error}"));
+            let query = PresenceMessage::decode(&bytes[..length])
+                .unwrap_or_else(|error| panic!("decode query: {error}"));
+            let response =
+                PresenceMessage::from_local(&remote, MessageKind::Response, 2, query.nonce)
+                    .encode();
+            responder
+                .send_to(&response, source)
+                .await
+                .unwrap_or_else(|error| panic!("send response: {error}"));
+        });
+        let bound = StdUdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .unwrap_or_else(|error| panic!("bound socket: {error}"));
+        let local = LocalPresence::new(
+            PresenceId::from_bytes([10; 16]),
+            ProtocolRange::new(1, 1).unwrap_or_else(|error| panic!("range: {error}")),
+            Capabilities::default(),
+            48_887,
+        )
+        .unwrap_or_else(|error| panic!("local: {error}"));
+        let provider = DirectProbeProvider::with_bound_socket(
+            DirectProbeConfig {
+                endpoints: vec![KnownEndpoint {
+                    expected_presence: Some(remote_id),
+                    discovery_address,
+                }],
+                probe_interval: Duration::from_secs(30),
+                response_timeout: Duration::from_secs(2),
+                observation_ttl: Duration::from_secs(10),
+                max_endpoints: 1,
+            },
+            bound,
+        )
+        .unwrap_or_else(|error| panic!("provider: {error}"));
+        let session = DiscoveryManager::new(local)
+            .with_provider(provider)
+            .start()
+            .await
+            .unwrap_or_else(|error| panic!("session: {error}"));
+        let peers = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let peers = session
+                    .handle()
+                    .snapshot()
+                    .await
+                    .unwrap_or_else(|error| panic!("snapshot: {error}"));
+                if !peers.is_empty() {
+                    break peers;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("bound direct discovery timed out"));
+        assert_eq!(peers[0].presence_id, remote_id);
         responder_task
             .await
             .unwrap_or_else(|error| panic!("responder task: {error}"));
