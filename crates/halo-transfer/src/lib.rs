@@ -4,6 +4,8 @@
 
 mod batch;
 
+pub use halo_transport::{DataIo, DataIoError};
+
 pub use batch::{
     BatchResumeStore, BatchSendJobStore, BatchSource, BatchTransferError, PreparedBatch,
     ReceivedBatch, prepare_batch, prepare_batch_with_id, receive_batch_data_with_progress,

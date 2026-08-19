@@ -8,10 +8,9 @@ use async_trait::async_trait;
 use halo_crypto::TlsChannelBinding;
 use halo_protocol::{BatchChunkRef, DEFAULT_CHUNK_SIZE, ResumePosition};
 use halo_transfer::{
-    BatchResumeStore, BatchSource, prepare_batch_with_id, receive_batch_data_with_progress,
-    send_batch_data_with_progress,
+    BatchResumeStore, BatchSource, DataIo, DataIoError, prepare_batch_with_id,
+    receive_batch_data_with_progress, send_batch_data_with_progress,
 };
-use halo_transport::{DataIo, DataIoError};
 use tokio::{
     fs::{self, File},
     io::AsyncWriteExt,
